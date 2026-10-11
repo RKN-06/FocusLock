@@ -8,6 +8,18 @@ try {
   if (savedTheme === 'light' || savedTheme === 'dark') document.documentElement.setAttribute('data-theme', savedTheme);
 } catch { /* Storage can be blocked; the system theme still applies. */ }
 
+if (window.matchMedia('(prefers-reduced-motion: no-preference) and (pointer: fine)').matches) {
+  let frame = 0;
+  window.addEventListener('pointermove', event => {
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      document.documentElement.style.setProperty('--mx', String(event.clientX / window.innerWidth - 0.5));
+      document.documentElement.style.setProperty('--my', String(event.clientY / window.innerHeight - 0.5));
+    });
+  }, { passive: true });
+}
+
 type User = { id: number; name: string; email: string; role: 'student' | 'teacher' };
 type Course = { id: number; code: string; title: string; term: string };
 type Session = { id: number; course_id: number; title: string; room_code: string; starts_at: string; ends_at: string; state: 'ready' | 'checkin_pending' | 'active' | 'paused' | 'ended' };
@@ -50,6 +62,9 @@ function unlockAudio() {
 function alertSound() { if (sharedAudio?.state === 'running') playAlertTone(sharedAudio); }
 window.addEventListener('pointerdown', unlockAudio);
 window.addEventListener('keydown', unlockAudio);
+// iOS Safari only unlocks audio from touchend or click, not pointerdown.
+window.addEventListener('touchend', unlockAudio, { passive: true });
+window.addEventListener('click', unlockAudio);
 
 async function api<T>(path: string, token?: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch('/api' + path, { ...options, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options.headers } });
@@ -132,7 +147,7 @@ function App() {
   }
   return <><header><div className="brand">FocusLock<span>TEACHER WORKSPACE</span></div><div className="account"><ThemeToggle/>{auth && <>{auth.user.name}<button className="secondary" onClick={signOut}>Sign out</button></>}</div></header>
     {enabled && <div className="dev-banner">Demo · sample data only</div>}
-    {!auth ? <main className="login"><div><p className="eyebrow">Attendance management</p><h1>Classroom attendance,<br/>managed with confidence.</h1><p>Open check-in, track attendance in real time, and keep a clear record for every session.</p></div>
+    {!auth ? <main className="login"><div><p className="eyebrow">Smart classroom management</p><h1>Run every class<br/>smarter, in one place.</h1><p>Attendance, focus sessions and course resources, managed from a single workspace.</p></div>
       <div className="panel"><h2>Teacher sign-in</h2>{enabled ? <form onSubmit={signIn}><label>Email<input type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)}/></label><label>Password<input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)}/></label><button disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button></form> : <><p>Use your college account.</p><button disabled={!college?.college_oidc || !college.authorization_endpoint || busy} onClick={() => void collegeSignIn()}>Sign in with college</button>{!college?.college_oidc && <p role="status">College sign-in isn't set up yet.</p>}</>}{error && <p className="error" role="alert">{error}</p>}</div></main>
       : <Dashboard auth={auth}/>}
     <footer>A QR check-in is evidence of participation, not proof of physical presence.</footer></>;
@@ -377,7 +392,7 @@ function Dashboard({ auth }: { auth: Auth }) {
 
   return <main className="dashboard-shell">
     <div className="page-heading">
-      <div><p className="eyebrow">Teacher workspace</p><h1>Classes & attendance</h1></div>
+      <div><p className="eyebrow">Teacher workspace</p><h1>Class management</h1></div>
       <span className="pill">{courses.length} assigned course{courses.length === 1 ? '' : 's'}</span>
     </div>
     {error && <p className="error" role="alert">{error}</p>}

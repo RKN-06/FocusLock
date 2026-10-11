@@ -106,3 +106,53 @@ footer{color:var(--muted);border-top-color:var(--line);background:transparent}
 tbody tr{transition:background .2s}tbody tr:hover{background:var(--accent-soft)}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 @media(max-width:900px){header{padding:12px 4%}}
+
+/* Layout polish: one gutter token, aligned cards, tabs that fit, calmer notification card. */
+:root{--pad:30px;--note-bg:#fff9e8}
+:root[data-theme="dark"]{--note-bg:var(--glass)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--note-bg:var(--glass)}}
+.notification-card{background:var(--note-bg);border-left:4px solid var(--warn-line)}
+.account{white-space:nowrap}
+.session-select label,.session-select select{min-width:0}
+.page-heading .pill{align-self:flex-end}
+@media(max-width:760px){
+  :root{--pad:18px}
+  .notification-card,.inline-hint,.focus-alert-controls,.focus-alert{margin-left:var(--pad);margin-right:var(--pad)}
+  .empty-state{margin-left:var(--pad);margin-right:var(--pad)}
+  .section-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:0 10px;overflow:visible}
+  .section-tabs button{padding:12px 4px;font-size:13px;text-align:center}
+  .session-select{flex-direction:column;align-items:stretch}
+  .session-select button{width:100%}
+  .course-header{flex-wrap:wrap}
+  .stat strong{font-size:22px}
+}
+@media(max-width:480px){.account{gap:8px}.account>span{display:none}}
+
+/* Motion: tab and page swaps, scroll-driven parallax, pointer depth. Everything here is off under reduced motion. */
+@keyframes swap{from{opacity:0;transform:translateY(14px) scale(.988)}to{opacity:1;transform:none}}
+@keyframes reveal{from{opacity:0;transform:translateY(36px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes px-back{to{translate:0 -170px}}
+@keyframes head-shrink{to{min-height:58px;box-shadow:0 10px 30px rgba(0,0,0,.2)}}
+@keyframes hero-away{to{translate:0 38px;opacity:.5}}
+.dashboard-shell,.overview-grid,.content-section{animation:swap .5s cubic-bezier(.2,.8,.2,1) both}
+.stat,.mini-card,.course,.session-banner{transition:translate .28s cubic-bezier(.2,.8,.2,1),box-shadow .28s,background .25s,border-color .25s}
+.stat:hover,.mini-card:hover{translate:0 -3px;box-shadow:0 16px 36px rgba(0,0,0,.16)}
+.section-tabs button.active{animation:tab-in .35s cubic-bezier(.2,.8,.2,1) both}
+@keyframes tab-in{from{opacity:.4;transform:translateY(4px)}to{opacity:1;transform:none}}
+body::after{content:"";position:fixed;inset:-10%;z-index:-1;pointer-events:none;background:radial-gradient(18% 18% at 78% 70%,var(--blob2),transparent 70%),radial-gradient(14% 14% at 12% 82%,var(--blob1),transparent 70%);filter:blur(24px);translate:calc(var(--mx,0)*-46px) calc(var(--my,0)*-30px);transition:translate .7s cubic-bezier(.2,.8,.2,1)}
+.login>div:first-child{translate:calc(var(--mx,0)*-10px) calc(var(--my,0)*-6px);transition:translate .6s cubic-bezier(.2,.8,.2,1)}
+.login .panel{translate:calc(var(--mx,0)*7px) calc(var(--my,0)*5px);transition:translate .6s cubic-bezier(.2,.8,.2,1)}
+@supports (animation-timeline:scroll()){
+  body::before{animation:drift 38s ease-in-out infinite alternate,px-back linear both;animation-timeline:auto,scroll(root)}
+  header{animation:head-shrink linear both;animation-timeline:scroll(root);animation-range:0 140px}
+  .page-heading>div{animation:hero-away linear both;animation-timeline:scroll(root);animation-range:0 320px}
+  .stat,.mini-card,.notification-card,.session-banner,.course-sidebar{animation:reveal linear both;animation-timeline:view();animation-range:entry 0% entry 60%}
+}
+@media(prefers-reduced-motion:reduce){body::after{display:none}*{translate:none!important}}
+
+h2,h3,h4{line-height:1.25}.course-header h2{line-height:1.2}.session-banner h3{line-height:1.2}
+
+/* Form and card spacing fixes */
+.resource-form{row-gap:12px;align-items:end}.resource-form label,.resource-form .check-label{margin:0}.resource-form .check-label{align-self:center;padding-bottom:10px}.resource-form button{margin-top:4px}
+.content-section .inline-hint{margin:16px 0 0}.content-section .empty-inline{margin-top:16px}
+.activity-grid{align-items:start}.mini-card .event-row{margin:0}.mini-card .event-row:first-of-type{border-top:0}

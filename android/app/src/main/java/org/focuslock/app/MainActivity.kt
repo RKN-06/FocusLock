@@ -15,6 +15,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.navigation.NavBackStackEntry
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -97,12 +101,15 @@ class MainActivity : ComponentActivity() {
         callbackUri = intent?.data
         setContent {
             var themeMode by remember { mutableStateOf(UiPrefs.load(this@MainActivity)) }
+            val backdropScroll = remember { BackdropScroll() }
             FocusLockTheme(themeMode) {
-                Box(Modifier.fillMaxSize()) {
-                    GlassBackdrop()
-                    Surface(Modifier.fillMaxSize(), color = Color.Transparent, contentColor = MaterialTheme.colorScheme.onBackground) {
-                        FocusLock(callbackUri = callbackUri, clearCallback = { callbackUri = null }, model = model, themeMode = themeMode,
-                            onThemeToggle = { themeMode = themeMode.next(); UiPrefs.save(this@MainActivity, themeMode) })
+                CompositionLocalProvider(LocalBackdropScroll provides backdropScroll) {
+                    Box(Modifier.fillMaxSize().trackBackdropScroll(backdropScroll)) {
+                        GlassBackdrop()
+                        Surface(Modifier.fillMaxSize(), color = Color.Transparent, contentColor = MaterialTheme.colorScheme.onBackground) {
+                            FocusLock(callbackUri = callbackUri, clearCallback = { callbackUri = null }, model = model, themeMode = themeMode,
+                                onThemeToggle = { themeMode = themeMode.next(); UiPrefs.save(this@MainActivity, themeMode) })
+                        }
                     }
                 }
             }
@@ -127,6 +134,10 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 }
+
+private val TabRoutes = setOf("today", "history")
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.isTabSwitch() =
+    initialState.destination.route in TabRoutes && targetState.destination.route in TabRoutes
 
 private fun time(value: String): String = DateTimeFormatter.ofPattern("EEE, d MMM · HH:mm").withZone(ZoneId.systemDefault()).format(Instant.parse(value))
 
@@ -197,10 +208,23 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
             AnimatedVisibility(state.loading) { LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 8.dp).clip(RoundedCornerShape(50))) }
             AnimatedVisibility(state.error != null) { Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth().glass(RoundedCornerShape(16.dp), 0.dp).padding(14.dp)) }
             NavHost(navController = nav, startDestination = "sign-in", modifier = Modifier.weight(1f),
-                enterTransition = { fadeIn(tween(320)) + slideInHorizontally(tween(380)) { it / 10 } + scaleIn(tween(380), 0.97f) },
-                exitTransition = { fadeOut(tween(180)) + slideOutHorizontally(tween(300)) { -it / 14 } },
-                popEnterTransition = { fadeIn(tween(320)) + slideInHorizontally(tween(380)) { -it / 10 } + scaleIn(tween(380), 0.97f) },
-                popExitTransition = { fadeOut(tween(180)) + slideOutHorizontally(tween(300)) { it / 14 } }) {
+                // Tabs cross-fade with a soft zoom; deeper screens push in with depth, like a native stack.
+                enterTransition = {
+                    if (isTabSwitch()) fadeIn(tween(280, delayMillis = 90)) + scaleIn(tween(320, delayMillis = 90), 0.95f)
+                    else slideInHorizontally(tween(420, easing = FastOutSlowInEasing)) { (it * 0.24f).toInt() } + fadeIn(tween(320)) + scaleIn(tween(420, easing = FastOutSlowInEasing), 0.96f)
+                },
+                exitTransition = {
+                    if (isTabSwitch()) fadeOut(tween(160)) + scaleOut(tween(220), 1.03f)
+                    else slideOutHorizontally(tween(420, easing = FastOutSlowInEasing)) { -(it * 0.14f).toInt() } + fadeOut(tween(240)) + scaleOut(tween(420, easing = FastOutSlowInEasing), 0.97f)
+                },
+                popEnterTransition = {
+                    if (isTabSwitch()) fadeIn(tween(280, delayMillis = 90)) + scaleIn(tween(320, delayMillis = 90), 0.95f)
+                    else slideInHorizontally(tween(420, easing = FastOutSlowInEasing)) { -(it * 0.14f).toInt() } + fadeIn(tween(320)) + scaleIn(tween(420, easing = FastOutSlowInEasing), 0.97f)
+                },
+                popExitTransition = {
+                    if (isTabSwitch()) fadeOut(tween(160)) + scaleOut(tween(220), 1.03f)
+                    else slideOutHorizontally(tween(420, easing = FastOutSlowInEasing)) { (it * 0.24f).toInt() } + fadeOut(tween(240)) + scaleOut(tween(420, easing = FastOutSlowInEasing), 0.96f)
+                }) {
                 composable("sign-in") { SignIn(state.loading, state.authConfig, model::signIn, model::beginCollegeSignIn,
                     state.focusSessionId?.let { focusId -> { nav.navigate("focus/$focusId") } }) }
                 composable("today") {
@@ -235,8 +259,9 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                         }) { Text("Allow automatic DND") } },
                         dismissButton = { TextButton(onClick = { quietDisclosure = false }) { Text("Not now") } })
                     val today = state.sessions.filter { Instant.parse(it.startsAt).atZone(ZoneId.systemDefault()).toLocalDate() == LocalDate.now() }
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
-                        item { Row(Modifier.fillMaxWidth().appear(0), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+                    val todayList = rememberLazyListState()
+                    LazyColumn(state = todayList, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
+                        item { Row(Modifier.fillMaxWidth().appear(0).heroParallax(todayList), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
                             Column {
                                 Text("Hello, ${state.student?.name?.substringBefore(' ').orEmpty()}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                                 Text("Today's classes", style = MaterialTheme.typography.headlineLarge)
@@ -363,8 +388,9 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                             privacyKind = null; privacyReason = ""
                         }, enabled = privacyReason.trim().length >= 10) { Text("Send request") } },
                         dismissButton = { TextButton(onClick = { privacyKind = null }) { Text("Cancel") } })
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
-                        item { Row(Modifier.fillMaxWidth().appear(0), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    val historyList = rememberLazyListState()
+                    LazyColumn(state = historyList, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
+                        item { Row(Modifier.fillMaxWidth().appear(0).heroParallax(historyList), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("History", style = MaterialTheme.typography.headlineLarge)
                             GlassIconButton(model::loadHistory, "Refresh") { Icon(Icons.Rounded.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
                         } }

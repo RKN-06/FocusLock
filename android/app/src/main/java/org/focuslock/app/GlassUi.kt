@@ -41,6 +41,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -61,6 +65,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -195,6 +200,8 @@ fun GlassBackdrop(modifier: Modifier = Modifier.fillMaxSize()) {
     val c1 by animateColorAsState(g.backdrop[1], tween(600), label = "bg1")
     val c2 by animateColorAsState(g.backdrop[2], tween(600), label = "bg2")
     val motion = rememberMotionEnabled()
+    val depth = LocalBackdropScroll.current
+    val shift by animateFloatAsState(depth?.offset ?: 0f, spring(dampingRatio = 1f, stiffness = Spring.StiffnessLow), label = "parallax")
     val t: State<Float> = if (motion) rememberInfiniteTransition(label = "blobs")
         .animateFloat(0f, 1f, infiniteRepeatable(tween(48_000, easing = LinearEasing), RepeatMode.Restart), label = "t")
     else remember { mutableFloatStateOf(0.15f) }
@@ -204,7 +211,7 @@ fun GlassBackdrop(modifier: Modifier = Modifier.fillMaxSize()) {
         val angle = t.value * 2f * PI.toFloat()
         g.blobs.forEachIndexed { i, color ->
             val a = angle * (i + 1) + i * 2.1f
-            val center = Offset(size.width * (0.5f + 0.40f * cos(a)), size.height * (0.5f + 0.36f * sin(a + i)))
+            val center = Offset(size.width * (0.5f + 0.40f * cos(a)), size.height * (0.5f + 0.36f * sin(a + i)) + shift * (0.6f + 0.5f * i))
             drawCircle(
                 Brush.radialGradient(listOf(color.copy(alpha = g.blobAlpha), Color.Transparent), center = center, radius = radius),
                 radius = radius, center = center,
@@ -362,4 +369,28 @@ fun FocusOrb(focusState: String, modifier: Modifier = Modifier) {
         drawCircle(Brush.radialGradient(listOf(color.copy(alpha = 0.95f), color.copy(alpha = 0.55f)), radius = base * 0.5f), radius = base * (0.40f + 0.04f * pulse.value))
         drawCircle(Color.White.copy(alpha = 0.55f), radius = base * (0.40f + 0.04f * pulse.value), style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()))
     })
+}
+
+/** Accumulated scroll, shared with the backdrop so the glows drift at a slower rate than the content. */
+class BackdropScroll { var offset by mutableFloatStateOf(0f) }
+val LocalBackdropScroll = staticCompositionLocalOf<BackdropScroll?> { null }
+
+@Composable
+fun Modifier.trackBackdropScroll(scroll: BackdropScroll): Modifier {
+    val connection = remember(scroll) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                scroll.offset = (scroll.offset + consumed.y * 0.22f).coerceIn(-460f, 460f)
+                return Offset.Zero
+            }
+        }
+    }
+    return nestedScroll(connection)
+}
+
+/** The first list item moves at about half speed and fades as it leaves, so the header seems to sit behind the cards. */
+fun Modifier.heroParallax(state: LazyListState): Modifier = graphicsLayer {
+    val offset = if (state.firstVisibleItemIndex == 0) state.firstVisibleItemScrollOffset.toFloat() else 600f
+    translationY = offset * 0.45f
+    alpha = 1f - (offset / 520f).coerceIn(0f, 0.75f)
 }
