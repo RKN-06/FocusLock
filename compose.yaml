@@ -44,7 +44,7 @@ services:
       FACE_TEMPLATE_KEY: ${FACE_TEMPLATE_KEY:-}
       FACE_CHECK_MODE: ${FACE_CHECK_MODE:-enrolled}
     ports:
-      - '127.0.0.1:8000:8000'
+      - '8000:8000'
     depends_on:
       db:
         condition: service_healthy
@@ -63,3 +63,4 @@ services:
         condition: service_healthy
 volumes:
   postgres_data:
+

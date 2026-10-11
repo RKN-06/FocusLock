@@ -1,6 +1,6 @@
 """Explicit demo fixtures, never invoked by application import or production startup."""
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import select
+from sqlalchemy import select, text
 from .config import settings
 from .db import SessionLocal
 from .models import Attendance, AttendanceEvent, BleReceiver, ClassSession, CourseOffering, Enrollment, User
@@ -40,6 +40,11 @@ def seed(db):
     if settings().dev_receiver_token:
         db.add(BleReceiver(id="11111111-1111-4111-8111-111111111111", course_id=1, room_code="A101", token_digest=digest(settings().dev_receiver_token), active=True))
     db.commit()
+    if db.bind.dialect.name == "postgresql":
+        # The demo rows use fixed ids; move each id counter past them so new rows do not collide.
+        for table in ("users", "course_offerings", "sessions"):
+            db.execute(text(f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), (SELECT MAX(id) FROM {table}))"))
+        db.commit()
     return True
 
 

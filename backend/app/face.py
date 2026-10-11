@@ -113,8 +113,13 @@ def my_template(user: User = Depends(current_user), db: Session = Depends(get_db
     student_only(user)
     current = mode()
     row = db.get(FaceTemplate, user.id) if current != "off" else None
+    # A template is decrypted and returned only for explicitly enabled local
+    # matching. The default production posture exposes enrollment status only;
+    # deployments can replace this flow with hardware-backed/server-side matching.
+    template = (unseal(user.id, row.ciphertext)
+                if row and settings().face_template_client_download else None)
     return {"mode": current, "enrolled": row is not None, "model": row.model if row else None,
-            "template": unseal(user.id, row.ciphertext) if row else None}
+            "template": template}
 
 
 @router.get("/face/roster")

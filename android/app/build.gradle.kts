@@ -25,7 +25,7 @@ android {
             val apiUrl = providers.gradleProperty("API_BASE_URL").getOrElse("http://10.0.2.2:8000")
             require(apiUrl.matches(Regex("https?://[a-zA-Z0-9.:-]+(/[a-zA-Z0-9._-]+)*"))) { "API_BASE_URL must be an HTTP(S) origin with an optional path (such as /api) and no trailing slash" }
             buildConfigField("String", "API_BASE_URL", "\"$apiUrl\"")
-            val resourceHosts = providers.gradleProperty("RESOURCE_ALLOWED_HOSTS").getOrElse("college.example.edu,docs.college.example.edu")
+            val resourceHosts = providers.gradleProperty("RESOURCE_ALLOWED_HOSTS").getOrElse("college.example.edu,docs.college.example.edu,www.w3.org")
             buildConfigField("String", "RESOURCE_ALLOWED_HOSTS", "\"$resourceHosts\"")
         }
         release {

@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.content.pm.PackageManager
 import android.app.Activity
+import android.view.WindowManager
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
@@ -69,6 +70,8 @@ class MainActivity : ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Keep session content out of screenshots, screen recording, casting, and recents previews.
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         QuietMode.reconcile(this)
         callbackUri = intent?.data
         setContent {

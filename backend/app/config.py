@@ -32,7 +32,10 @@ class Settings(BaseSettings):
     retention_credential_days: int = 1
     cors_origins: str = "http://localhost:5173"
     face_template_key: str = ""
-    face_check_mode: str = "enrolled"  # off | enrolled | required
+    # Local compatibility default; production configuration must set this false.
+    face_template_client_download: bool = True
+    # Production-safe default: biometric checks must be explicitly enabled by deployment configuration.
+    face_check_mode: str = "enrolled"  # off | enrolled | required; production example sets off
 
     @property
     def dev_auth_enabled(self) -> bool:
