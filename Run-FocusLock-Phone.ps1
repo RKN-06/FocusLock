@@ -27,8 +27,16 @@ while (-not $device) {
 & $adb -s $device reverse tcp:8000 tcp:8000 | Out-Null
 Push-Location $android
 try {
-    .\gradlew.bat installDebug -PAPI_BASE_URL=http://127.0.0.1:8000
-    if ($LASTEXITCODE -ne 0) { throw "Android build/install failed with exit code $LASTEXITCODE." }
+    $installOutput = & .\gradlew.bat installDebug -PAPI_BASE_URL=http://127.0.0.1:8000 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        if ($installOutput -match "INSTALL_FAILED_VERSION_DOWNGRADE") {
+            Write-Host "Installed app has a newer version code; removing it and retrying."
+            & $adb -s $device uninstall org.focuslock.app | Out-Host
+            $installOutput = & .\gradlew.bat installDebug -PAPI_BASE_URL=http://127.0.0.1:8000 2>&1 | Out-String
+        }
+        if ($LASTEXITCODE -ne 0) { throw $installOutput }
+    }
+    Write-Host $installOutput
 } finally { Pop-Location }
 
 & $adb -s $device shell am force-stop org.focuslock.app
