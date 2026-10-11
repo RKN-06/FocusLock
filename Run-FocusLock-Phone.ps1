@@ -4,10 +4,28 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $android = Join-Path $root "android"
 $adb = Join-Path $env:LOCALAPPDATA "Android\Sdk\platform-tools\adb.exe"
 $java = "C:\Users\krith\Documents\Codex\2026-10-10\stage-1-build-the-foundation-help\work\jdk17\jdk-17.0.20.1+1"
+$docker = (Get-Command docker -ErrorAction SilentlyContinue).Source
+if (-not $docker) { $docker = Join-Path $env:LOCALAPPDATA "Programs\DockerDesktop\resources\bin\docker.exe" }
 
 if (-not (Test-Path $adb)) { throw "ADB not found at $adb. Install Android SDK Platform-Tools or update this path." }
 if (-not (Test-Path $android)) { throw "Android project not found at $android." }
+if (-not (Test-Path $docker)) { throw "Docker CLI not found. Start Docker Desktop or update the Docker path in this script." }
 if (Test-Path $java) { $env:JAVA_HOME = $java; $env:Path = "$java\bin;$env:Path" }
+
+Push-Location $root
+try {
+    Write-Host "Starting FocusLock Docker services..."
+    & $docker compose up -d db api dashboard
+    if ($LASTEXITCODE -ne 0) { throw "Docker Compose failed with exit code $LASTEXITCODE." }
+    $healthy = $false
+    for ($attempt = 1; $attempt -le 30; $attempt++) {
+        try {
+            $health = Invoke-RestMethod "http://localhost:8000/health/live" -TimeoutSec 2
+            if ($health.status -eq "ok") { $healthy = $true; break }
+        } catch { Start-Sleep -Seconds 2 }
+    }
+    if (-not $healthy) { throw "FocusLock API did not become healthy at http://localhost:8000/health/live." }
+} finally { Pop-Location }
 
 & $adb start-server | Out-Null
 $device = $null
