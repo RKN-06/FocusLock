@@ -132,7 +132,7 @@ function App() {
   }
   return <><header><div className="brand">FocusLock<span>TEACHER WORKSPACE</span></div><div className="account"><ThemeToggle/>{auth && <>{auth.user.name}<button className="secondary" onClick={signOut}>Sign out</button></>}</div></header>
     {enabled && <div className="dev-banner">Demo · sample data only</div>}
-    {!auth ? <main className="login"><div><p className="eyebrow">A calmer start to class</p><h1>Attendance with<br/>student choice.</h1><p>Manage your classes and confirm attendance.</p></div>
+    {!auth ? <main className="login"><div><p className="eyebrow">Attendance management</p><h1>Classroom attendance,<br/>managed with confidence.</h1><p>Open check-in, track attendance in real time, and keep a clear record for every session.</p></div>
       <div className="panel"><h2>Teacher sign-in</h2>{enabled ? <form onSubmit={signIn}><label>Email<input type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)}/></label><label>Password<input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)}/></label><button disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button></form> : <><p>Use your college account.</p><button disabled={!college?.college_oidc || !college.authorization_endpoint || busy} onClick={() => void collegeSignIn()}>Sign in with college</button>{!college?.college_oidc && <p role="status">College sign-in isn't set up yet.</p>}</>}{error && <p className="error" role="alert">{error}</p>}</div></main>
       : <Dashboard auth={auth}/>}
     <footer>A QR check-in is evidence of participation, not proof of physical presence.</footer></>;
