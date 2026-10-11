@@ -120,9 +120,9 @@ class GlassPalette(
 
 private val LightGlass = GlassPalette(
     dark = false,
-    backdrop = listOf(Color(0xFFE3F4EC), Color(0xFFDCE8F8), Color(0xFFEEE3F7)),
-    blobs = listOf(Color(0xFF6FD3B4), Color(0xFF8DB5F5), Color(0xFFC9A5F0)),
-    blobAlpha = 0.55f,
+    backdrop = listOf(Color(0xFFCFEFE4), Color(0xFFD9E6F7), Color(0xFFE8DCF5)),
+    blobs = listOf(Color.White, Color(0xFFE9F8F1), Color.White),
+    blobAlpha = 0.40f,
     fillTop = Color.White.copy(alpha = 0.72f), fillBottom = Color.White.copy(alpha = 0.40f),
     edgeStart = Color.White.copy(alpha = 0.95f), edgeEnd = Color.White.copy(alpha = 0.25f),
     shadow = Color(0xFF1B3A4B),
@@ -130,9 +130,9 @@ private val LightGlass = GlassPalette(
 
 private val DarkGlass = GlassPalette(
     dark = true,
-    backdrop = listOf(Color(0xFF07130F), Color(0xFF09111F), Color(0xFF130A1D)),
-    blobs = listOf(Color(0xFF1F8F72), Color(0xFF3A55C4), Color(0xFF8A3FB8)),
-    blobAlpha = 0.40f,
+    backdrop = listOf(Color(0xFF07130F), Color(0xFF0A1815), Color(0xFF0A141B)),
+    blobs = listOf(Color(0xFF1F8F72), Color(0xFF2A7F8F), Color(0xFF3C6E5A)),
+    blobAlpha = 0.34f,
     fillTop = Color.White.copy(alpha = 0.14f), fillBottom = Color.White.copy(alpha = 0.05f),
     edgeStart = Color.White.copy(alpha = 0.34f), edgeEnd = Color.White.copy(alpha = 0.06f),
     shadow = Color.Black,
@@ -140,15 +140,7 @@ private val DarkGlass = GlassPalette(
 
 val LocalGlass = staticCompositionLocalOf { LightGlass }
 
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF17584B), onPrimary = Color.White,
-    primaryContainer = Color(0xFFC9EBDD), onPrimaryContainer = Color(0xFF00201A),
-    secondary = Color(0xFF4A635B), tertiary = Color(0xFF8A5A00),
-    background = Color(0xFFF5F6F1), onBackground = Color(0xFF14302B),
-    surface = Color.White, onSurface = Color(0xFF14302B),
-    surfaceVariant = Color(0xFFDCE5E0), onSurfaceVariant = Color(0xFF3F4F4A),
-    outline = Color(0xFF6F7F79), error = Color(0xFFB3261E),
-)
+private val LightColors = lightColorScheme(primary = Color(0xFF17584B), background = Color(0xFFF5F6F1))
 
 private val DarkColors = darkColorScheme(
     primary = Color(0xFF5ED1B0), onPrimary = Color(0xFF00382C),
