@@ -90,6 +90,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
@@ -319,8 +323,9 @@ fun GlassChip(text: String, modifier: Modifier = Modifier, color: Color = Materi
 fun GlassIconButton(onClick: () -> Unit, description: String, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val source = remember { MutableInteractionSource() }
     Box(modifier.pressScale(source, 0.9f).glass(CircleShape, 6.dp)
+        .semantics { contentDescription = description }
         .clickable(interactionSource = source, indication = null, role = Role.Button, onClickLabel = description, onClick = onClick)
-        .padding(horizontal = 14.dp, vertical = 9.dp), contentAlignment = Alignment.Center) { content() }
+        .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp).padding(horizontal = 12.dp, vertical = 8.dp), contentAlignment = Alignment.Center) { content() }
 }
 
 class TabItem(val route: String, val label: String, val icon: ImageVector)
@@ -337,7 +342,7 @@ fun GlassTabBar(tabs: List<TabItem>, selected: String?, onSelect: (String) -> Un
             val pill by animateColorAsState(if (on) primary.copy(alpha = 0.18f) else Color.Transparent, tween(260), label = "pill")
             val tint by animateColorAsState(if (on) primary else idle, tween(260), label = "tint")
             val source = remember { MutableInteractionSource() }
-            Row(Modifier.weight(1f).pressScale(source, 0.94f).clip(CircleShape).background(pill)
+            Row(Modifier.weight(1f).semantics { this.selected = on }.pressScale(source, 0.94f).clip(CircleShape).background(pill)
                 .clickable(interactionSource = source, indication = null, role = Role.Tab) { onSelect(tab.route) }.padding(vertical = 11.dp),
                 horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                 Icon(tab.icon, contentDescription = if (on) null else tab.label, tint = tint)

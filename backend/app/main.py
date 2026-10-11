@@ -271,3 +271,5 @@ from .stage6 import router as stage6_router  # noqa: E402
 app.include_router(stage6_router)
 from .face import router as face_router  # noqa: E402
 app.include_router(face_router)
+from .session_admin import router as session_admin_router  # noqa: E402
+app.include_router(session_admin_router)

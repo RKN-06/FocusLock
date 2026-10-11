@@ -27,6 +27,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -48,7 +51,8 @@ fun DateStrip(days: List<LocalDate>, selected: LocalDate, withClasses: Set<Local
             val fill by animateColorAsState(if (on) MaterialTheme.colorScheme.primary else Color.Transparent, tween(240), label = "day-fill")
             val ink by animateColorAsState(if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, tween(240), label = "day-ink")
             val source = remember { MutableInteractionSource() }
-            Column(Modifier.width(56.dp).pressScale(source, 0.94f).glass(RoundedCornerShape(20.dp), 0.dp).background(fill)
+            val spoken = day.format(DateTimeFormatter.ofPattern("EEEE d MMMM")) + (if (day in withClasses) ", has classes" else ", no classes") + (if (day == today) ", today" else "")
+            Column(Modifier.width(56.dp).semantics { contentDescription = spoken; this.selected = on }.pressScale(source, 0.94f).glass(RoundedCornerShape(20.dp), 0.dp).background(fill)
                 .clickable(interactionSource = source, indication = null, role = Role.Button) { onSelect(day) }.padding(vertical = 10.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(if (day == today) "Today" else day.format(Weekday), color = ink.copy(alpha = 0.75f), style = MaterialTheme.typography.labelSmall, maxLines = 1)

@@ -149,7 +149,8 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
         mutable.value = mutable.value.copy(sessions = sessions)
         val student = mutable.value.student ?: return@run
         val current = focus.currentSession(student.id)
-        if (current != null && sessions.any { it.id == current && it.state == "ended" }) {
+        // A session that ended, or that the teacher deleted, can no longer hold the phone in focus or Do Not Disturb.
+        if (current != null && (sessions.any { it.id == current && it.state == "ended" } || sessions.none { it.id == current })) {
             endLocalSession(current)
         }
         if (focus.currentSession(student.id) != null) return@run

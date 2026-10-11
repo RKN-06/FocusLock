@@ -80,6 +80,7 @@ import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.io.File
@@ -364,6 +365,14 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                             privacyKind = null; privacyReason = ""
                         }, enabled = privacyReason.trim().length >= 10) { Text("Send request") } },
                         dismissButton = { TextButton(onClick = { privacyKind = null }) { Text("Cancel") } })
+                    var shownMonth by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
+                    var pickedDay by rememberSaveable { mutableStateOf<String?>(null) }
+                    val month = YearMonth.parse(shownMonth)
+                    val recordDay = { record: HistoryEntry -> Instant.parse(record.session.startsAt).atZone(ZoneId.systemDefault()).toLocalDate() }
+                    val marks = state.history.groupBy(recordDay).mapValues { (_, rows) -> rows.map { it.status } }
+                    val picked = pickedDay?.let(LocalDate::parse)
+                    val shown = state.history.filter { YearMonth.from(recordDay(it)) == month && (picked == null || recordDay(it) == picked) }
+                        .sortedByDescending { it.session.startsAt }
                     val historyList = rememberLazyListState()
                     LazyColumn(state = historyList, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
                         item { Row(Modifier.fillMaxWidth().appear(0).heroParallax(historyList), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -371,14 +380,14 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                             GlassIconButton(model::loadHistory, "Refresh") { Icon(Icons.Rounded.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
                         } }
                         if (!state.loading && state.history.isEmpty()) item { Text("No records yet", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 12.dp)) }
-                        val byDate = state.history.groupBy { Instant.parse(it.session.startsAt).atZone(ZoneId.systemDefault()).toLocalDate() }.toSortedMap(compareByDescending { it })
-                        byDate.forEach { (day, records) ->
-                            item(key = "day-$day") { SectionLabel(day.format(DateTimeFormatter.ofPattern("EEE, d MMM yyyy")), MaterialTheme.colorScheme.primary, Icons.Rounded.DateRange, Modifier.appear(1), count = records.size) }
-                            itemsIndexed(records, key = { _, it -> it.session.id }) { index, record ->
-                                Column(Modifier.appear(index + 1)) {
-                                    SessionCard(record.session.copy(status = record.status)) { nav.navigate("session/${record.session.id}") }
-                                    GTextButton(onClick = { privacyKind = "correction"; privacySession = record.session.id }) { Text("Request correction") }
-                                }
+                        item { MonthCalendar(month, marks, picked, { pickedDay = it?.toString() }, { shownMonth = it.toString(); pickedDay = null }, Modifier.appear(1)) }
+                        item { SectionLabel(picked?.format(DateTimeFormatter.ofPattern("EEE, d MMM yyyy")) ?: month.format(DateTimeFormatter.ofPattern("MMMM yyyy")),
+                            MaterialTheme.colorScheme.primary, Icons.Rounded.DateRange, Modifier.appear(2), count = shown.size) }
+                        if (!state.loading && state.history.isNotEmpty() && shown.isEmpty()) item { Text(if (picked != null) "No records on this day" else "No records this month", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        itemsIndexed(shown, key = { _, it -> it.session.id }) { index, record ->
+                            Column(Modifier.appear(index + 2)) {
+                                SessionCard(record.session.copy(status = record.status)) { nav.navigate("session/${record.session.id}") }
+                                GTextButton(onClick = { privacyKind = "correction"; privacySession = record.session.id }) { Text("Request correction") }
                             }
                         }
                         item { GOutlinedButton(onClick = { privacyKind = "deletion"; privacySession = null }) { Text("Request data deletion") } }

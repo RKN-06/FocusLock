@@ -161,6 +161,9 @@ function Dashboard({ auth }: { auth: Auth }) {
   const [roster, setRoster] = useState<User[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [dayFilter, setDayFilter] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<'one' | 'all' | null>(null);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState('');
   const [session, setSession] = useState<Session | null>(null);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [pending, setPending] = useState<Pending[]>([]);
@@ -204,7 +207,7 @@ function Dashboard({ auth }: { auth: Auth }) {
   }, [token]);
   useEffect(() => {
     let active = true; selection.current++;
-    setSession(null); setDayFilter(''); setAttendance([]); setRoster([]); setSessions([]); setPending([]); setAudit([]); setChallenge(null); setNotice(''); setConfirmation(null); setSection('overview'); setCreateOpen(false);
+    setSession(null); setDayFilter(''); setDeleteTarget(null); setAttendance([]); setRoster([]); setSessions([]); setPending([]); setAudit([]); setChallenge(null); setNotice(''); setConfirmation(null); setSection('overview'); setCreateOpen(false);
     if (!course) return;
     setLoading(true); setError('');
     Promise.all([api<User[]>(`/courses/${course.id}/roster`, token), api<Session[]>(`/sessions?course_id=${course.id}`, token)])
@@ -328,6 +331,27 @@ function Dashboard({ auth }: { auth: Auth }) {
       setNotice('Session scheduled. Open check-in when its start time arrives.');
     } catch (e) { setError((e as Error).message); } finally { setSaving(null); }
   }
+  function askDelete(target: 'one' | 'all') {
+    setDeleteTarget(target); setDeleteReason(''); setDeleteConfirm(''); setCreateOpen(false); setError(''); setNotice('');
+  }
+  async function deleteSessions(event: React.FormEvent) {
+    event.preventDefault(); if (!course || !deleteTarget) return;
+    const reason = deleteReason.trim();
+    if (reason.length < 10) { setError('Give a reason of at least 10 characters.'); return; }
+    if (deleteTarget === 'all' && deleteConfirm.trim() !== 'DELETE') { setError('Type DELETE to confirm deleting every session.'); return; }
+    setSaving(-1); setError('');
+    try {
+      if (deleteTarget === 'one' && session) {
+        await api(`/sessions/${session.id}`, token, { method: 'DELETE', body: JSON.stringify({ reason }) });
+        const remaining = sessions.filter(row => row.id !== session.id);
+        setSessions(remaining); setSession(remaining.at(-1) ?? null); setNotice('Session deleted.');
+      } else {
+        await api(`/courses/${course.id}/sessions`, token, { method: 'DELETE', body: JSON.stringify({ reason }) });
+        setSessions([]); setSession(null); setNotice('All sessions in this course were deleted.');
+      }
+      setDayFilter(''); setDeleteTarget(null); setDeleteReason(''); setDeleteConfirm('');
+    } catch (e) { setError((e as Error).message); } finally { setSaving(null); }
+  }
   async function addResource(event: React.FormEvent) {
     event.preventDefault(); if (!session) return;
     setError(''); setSaving(-1);
@@ -421,8 +445,14 @@ function Dashboard({ auth }: { auth: Auth }) {
         {!loading && !courses.length && <p>No courses are assigned to this teacher account.</p>}
       </aside>
       <section className="panel workspace-panel">
-        <div className="course-header"><div><p className="eyebrow">{course?.code ?? 'Course'}</p><h2>{course?.title ?? 'Your course workspace'}</h2><p>{course?.term ?? 'Choose a course to begin'}</p></div>{course && <button className="secondary" onClick={() => { setCreateOpen(open => !open); setNewStarts(localInput(new Date())); setNewEnds(localInput(new Date(Date.now() + 60 * 60_000))); setError(''); }} disabled={saving !== null}>{createOpen ? 'Close form' : '+ New session'}</button>}</div>
+        <div className="course-header"><div><p className="eyebrow">{course?.code ?? 'Course'}</p><h2>{course?.title ?? 'Your course workspace'}</h2><p>{course?.term ?? 'Choose a course to begin'}</p></div>{course && <div className="header-actions"><button className="secondary" onClick={() => { setCreateOpen(open => !open); setNewStarts(localInput(new Date())); setNewEnds(localInput(new Date(Date.now() + 60 * 60_000))); setError(''); }} disabled={saving !== null}>{createOpen ? 'Close form' : '+ New session'}</button>{sessions.length > 0 && <button className="secondary danger" onClick={() => askDelete('all')} disabled={saving !== null}>Delete all sessions</button>}</div>}</div>
         {loading ? <p role="status">Loading course…</p> : <>
+          {deleteTarget && course && <form className="create-session danger-zone" onSubmit={deleteSessions}>
+            <div><h3>{deleteTarget === 'all' ? `Delete all ${sessions.length} session${sessions.length === 1 ? '' : 's'} in ${course.code}?` : `Delete session "${session?.title ?? ''}"?`}</h3><p>This permanently removes attendance records, resources and focus events for {deleteTarget === 'all' ? 'these sessions' : 'this session'}. It cannot be undone.</p></div>
+            <label>Reason (at least 10 characters)<input required minLength={10} maxLength={400} autoFocus value={deleteReason} onChange={e => setDeleteReason(e.target.value)} placeholder="Why are you deleting this?"/></label>
+            {deleteTarget === 'all' && <label>Type DELETE to confirm<input required autoComplete="off" value={deleteConfirm} onChange={e => setDeleteConfirm(e.target.value)}/></label>}
+            <div className="actions"><button className="danger-solid" disabled={saving !== null}>Delete permanently</button><button type="button" className="secondary" onClick={() => setDeleteTarget(null)}>Cancel</button></div>
+          </form>}
           {createOpen && course && <form className="create-session" onSubmit={createSession}>
             <div><h3>Schedule a session</h3></div>
             <div className="form-grid"><label>Session title<input required minLength={3} maxLength={150} value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Week 4 · Workshop"/></label><label>Room code<input required maxLength={40} pattern="[A-Za-z0-9._-]+" value={newRoom} onChange={e => setNewRoom(e.target.value)} placeholder="CS-101"/></label><label>Starts<input required type="datetime-local" value={newStarts} onChange={e => setNewStarts(e.target.value)}/></label><label>Ends<input required type="datetime-local" value={newEnds} onChange={e => setNewEnds(e.target.value)}/></label></div>
@@ -444,6 +474,7 @@ function Dashboard({ auth }: { auth: Auth }) {
               {session.state === 'active' && !sessionExpired && <button onClick={() => changeState('pause')} disabled={saving !== null}>Pause session</button>}
               {session.state === 'paused' && !sessionExpired && <button onClick={() => changeState('resume')} disabled={saving !== null}>Resume session</button>}
               {['checkin_pending', 'active', 'paused'].includes(session.state) && <button className="secondary" onClick={() => changeState('end')} disabled={saving !== null}>End session</button>}
+              {['ready', 'ended'].includes(session.state) && <button className="secondary danger" onClick={() => askDelete('one')} disabled={saving !== null}>Delete session</button>}
             </div></div>
             <div className="focus-alert-controls">
               <button className="secondary" type="button" aria-pressed={soundEnabled} onClick={() => void toggleSound()}>{soundEnabled ? 'Mute alert sounds' : 'Turn on alert sounds'}</button>
