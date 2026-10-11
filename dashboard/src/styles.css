@@ -171,3 +171,11 @@ h2,h3,h4{line-height:1.25}.course-header h2{line-height:1.2}.session-banner h3{l
 .course-sidebar,.workspace-panel{border-top:4px solid var(--accent)}
 
 .alerts-section .section-heading .alert-badge{color:var(--on-alert);font-size:14px}
+
+/* Date bar: find sessions by date */
+.date-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:14px var(--pad) 0;border-top:1px solid var(--line)}
+.date-bar input[type=date]{display:inline-block;width:auto;margin:0;padding:8px 10px;font-size:13px}
+.date-bar button{padding:7px 12px;font-size:13px}.date-bar button[aria-label]{min-width:36px;padding:7px 0;font-size:16px;line-height:1}
+.date-count{margin-left:auto;font-size:12px;color:var(--muted)}
+.date-bar+.session-select{border-top:0;padding-top:12px}
+@media(max-width:760px){.date-count{margin-left:0;flex-basis:100%}}

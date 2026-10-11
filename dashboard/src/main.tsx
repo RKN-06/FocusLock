@@ -35,6 +35,8 @@ type Auth = { access_token: string; user: User };
 type AuthConfig = { development_login: boolean; college_oidc: boolean; authorization_endpoint: string | null; dashboard_client_id: string | null; dashboard_redirect_uri: string | null };
 const date = (value: string) => new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 const localInput = (value: Date) => new Date(value.getTime() - value.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+const sessionDay = (value: string) => localInput(new Date(value)).slice(0, 10);
+const shiftDay = (day: string, delta: number) => { const next = new Date(`${day}T12:00:00`); next.setDate(next.getDate() + delta); return localInput(next).slice(0, 10); };
 const stateLabel = (value: string) => value === 'checkin_pending' ? 'Check-in pending' : value.replace('_', ' ').replace(/^./, letter => letter.toUpperCase());
 const url64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 function playAlertTone(context: AudioContext) {
@@ -158,6 +160,7 @@ function Dashboard({ auth }: { auth: Auth }) {
   const [course, setCourse] = useState<Course | null>(null);
   const [roster, setRoster] = useState<User[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [dayFilter, setDayFilter] = useState('');
   const [session, setSession] = useState<Session | null>(null);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [pending, setPending] = useState<Pending[]>([]);
@@ -201,7 +204,7 @@ function Dashboard({ auth }: { auth: Auth }) {
   }, [token]);
   useEffect(() => {
     let active = true; selection.current++;
-    setSession(null); setAttendance([]); setRoster([]); setSessions([]); setPending([]); setAudit([]); setChallenge(null); setNotice(''); setConfirmation(null); setSection('overview'); setCreateOpen(false);
+    setSession(null); setDayFilter(''); setAttendance([]); setRoster([]); setSessions([]); setPending([]); setAudit([]); setChallenge(null); setNotice(''); setConfirmation(null); setSection('overview'); setCreateOpen(false);
     if (!course) return;
     setLoading(true); setError('');
     Promise.all([api<User[]>(`/courses/${course.id}/roster`, token), api<Session[]>(`/sessions?course_id=${course.id}`, token)])
@@ -321,7 +324,7 @@ function Dashboard({ auth }: { auth: Auth }) {
     try {
       const created = await api<Session>('/sessions', token, { method: 'POST', body: JSON.stringify({ course_id: course.id, title: newTitle.trim(), starts_at: starts.toISOString(), ends_at: ends.toISOString(), room_code: newRoom.trim() }) });
       setSessions(rows => [...rows, created].sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()));
-      setSession(created); setNewTitle(''); setCreateOpen(false); setSection('overview');
+      setSession(created); setDayFilter(''); setNewTitle(''); setCreateOpen(false); setSection('overview');
       setNotice('Session scheduled. Open check-in when its start time arrives.');
     } catch (e) { setError((e as Error).message); } finally { setSaving(null); }
   }
@@ -389,6 +392,13 @@ function Dashboard({ auth }: { auth: Auth }) {
   const sessionExpired = session && new Date(session.ends_at) <= new Date();
   const recentFocus = focusEvents.filter(event => event.action === 'backgrounded').slice(-5).reverse();
   const selectedPrivacyRequest = privacyRequests.find(request => request.id === privacyReview?.id);
+  const visibleSessions = dayFilter ? sessions.filter(s => sessionDay(s.starts_at) === dayFilter) : sessions;
+  const today = localInput(new Date()).slice(0, 10);
+  function changeDay(day: string) {
+    setDayFilter(day);
+    const list = day ? sessions.filter(s => sessionDay(s.starts_at) === day) : sessions;
+    if (list.length && !(session && list.some(s => s.id === session.id))) { setSession(list.at(-1) ?? null); setNotice(''); }
+  }
   const alertCount = exitRequests.length + pending.length + privacyRequests.length + recentFocus.length;
 
   return <main className="dashboard-shell">
@@ -418,7 +428,15 @@ function Dashboard({ auth }: { auth: Auth }) {
             <div className="form-grid"><label>Session title<input required minLength={3} maxLength={150} value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Week 4 · Workshop"/></label><label>Room code<input required maxLength={40} pattern="[A-Za-z0-9._-]+" value={newRoom} onChange={e => setNewRoom(e.target.value)} placeholder="CS-101"/></label><label>Starts<input required type="datetime-local" value={newStarts} onChange={e => setNewStarts(e.target.value)}/></label><label>Ends<input required type="datetime-local" value={newEnds} onChange={e => setNewEnds(e.target.value)}/></label></div>
             <div className="actions"><button disabled={saving !== null}>Create session</button><button type="button" className="secondary" onClick={() => setCreateOpen(false)}>Cancel</button></div>
           </form>}
-          <div className="session-select"><label>Selected session<select value={session?.id ?? ''} disabled={!sessions.length || saving !== null} onChange={e => { setSession(sessions.find(s => s.id === Number(e.target.value)) ?? null); setNotice(''); }}>{!sessions.length && <option value="">No sessions yet</option>}{sessions.map(s => <option key={s.id} value={s.id}>{s.title} · {date(s.starts_at)} · {stateLabel(s.state)}</option>)}</select></label>{session && <button className="secondary" onClick={refreshSession} disabled={saving !== null}>Refresh data</button>}</div>
+          <div className="date-bar" role="group" aria-label="Find sessions by date">
+            <button type="button" className="secondary" aria-label="Previous day" disabled={saving !== null} onClick={() => changeDay(shiftDay(dayFilter || today, -1))}>‹</button>
+            <input type="date" aria-label="Session date" value={dayFilter} onChange={e => changeDay(e.target.value)}/>
+            <button type="button" className="secondary" aria-label="Next day" disabled={saving !== null} onClick={() => changeDay(shiftDay(dayFilter || today, 1))}>›</button>
+            <button type="button" className={`secondary ${dayFilter === today ? 'selected-filter' : ''}`} onClick={() => changeDay(today)}>Today</button>
+            <button type="button" className={`secondary ${dayFilter ? '' : 'selected-filter'}`} aria-pressed={!dayFilter} onClick={() => changeDay('')}>All dates</button>
+            <span className="date-count">{dayFilter ? `${visibleSessions.length} session${visibleSessions.length === 1 ? '' : 's'} on this date` : `${sessions.length} session${sessions.length === 1 ? '' : 's'}`}</span>
+          </div>
+          <div className="session-select"><label>Selected session<select value={session && visibleSessions.some(s => s.id === session.id) ? session.id : ''} disabled={!visibleSessions.length || saving !== null} onChange={e => { setSession(sessions.find(s => s.id === Number(e.target.value)) ?? null); setNotice(''); }}>{!visibleSessions.length && <option value="">{dayFilter ? 'No sessions on this date' : 'No sessions yet'}</option>}{visibleSessions.length > 0 && !(session && visibleSessions.some(s => s.id === session.id)) && <option value="">Choose a session</option>}{visibleSessions.map(s => <option key={s.id} value={s.id}>{s.title} · {date(s.starts_at)} · {stateLabel(s.state)}</option>)}</select></label>{session && <button className="secondary" onClick={refreshSession} disabled={saving !== null}>Refresh data</button>}</div>
           {!session ? <div className="empty-state"><h3>No session selected</h3><p>Create a session for this course to show a live QR and begin taking attendance.</p><button onClick={() => setCreateOpen(true)} disabled={!course}>Create session</button></div> : <>
             <div className="session-banner"><div><span className={`state-badge state-${session.state}`}>{stateLabel(session.state)}</span><h3>{session.title}</h3><p>{date(session.starts_at)} — {date(session.ends_at)} · Room {session.room_code ?? 'UNASSIGNED'}</p></div><div className="session-actions">
               {canOpen && <button onClick={() => changeState('start')} disabled={saving !== null}>Open check-in</button>}

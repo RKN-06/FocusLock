@@ -246,13 +246,19 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                             while (true) { model.loadToday(); delay(10_000) }
                         }
                     }
-                    val today = state.sessions.filter { Instant.parse(it.startsAt).atZone(ZoneId.systemDefault()).toLocalDate() == LocalDate.now() }
+                    var selectedDay by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
+                    val selected = LocalDate.parse(selectedDay)
+                    val sessionDays = state.sessions.map { Instant.parse(it.startsAt).atZone(ZoneId.systemDefault()).toLocalDate() }.toSet()
+                    val firstDay = minOf(LocalDate.now().minusDays(14), sessionDays.minOrNull() ?: LocalDate.now())
+                    val lastDay = maxOf(LocalDate.now().plusDays(14), sessionDays.maxOrNull() ?: LocalDate.now())
+                    val days = generateSequence(firstDay) { it.plusDays(1) }.takeWhile { !it.isAfter(lastDay) }.take(240).toList()
+                    val dayClasses = state.sessions.filter { Instant.parse(it.startsAt).atZone(ZoneId.systemDefault()).toLocalDate() == selected }
                     val todayList = rememberLazyListState()
                     LazyColumn(state = todayList, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
                         item { Row(Modifier.fillMaxWidth().appear(0).heroParallax(todayList), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
                             Column {
                                 Text("Hello, ${state.student?.name?.substringBefore(' ').orEmpty()}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                                Text("Today's classes", style = MaterialTheme.typography.headlineLarge)
+                                Text(if (selected == LocalDate.now()) "Today's classes" else selected.format(DateTimeFormatter.ofPattern("EEEE, d MMM")), style = MaterialTheme.typography.headlineLarge)
                             }
                             GlassIconButton(model::loadToday, "Refresh") { Icon(Icons.Rounded.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
                         } }
@@ -262,9 +268,10 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                         if (!state.dndReady) item { AlertCard("Do Not Disturb is required", dnd.message.ifBlank { "Turn it on to join class sessions." }, "Set up", Modifier.appear(1)) { dnd.open() } }
                         state.focusSessionId?.let { focusId -> item { AlertCard("Focus in progress", "Pause or exit any time.", "Return to focus", Modifier.appear(1)) { nav.navigate("focus/$focusId") } } }
                         if (waiting > 0) item { AlertCard("Waiting for teacher review", "$waiting check-in${if (waiting == 1) "" else "s"} not counted yet.", modifier = Modifier.appear(1)) }
-                        item { SectionLabel("Classes", MaterialTheme.colorScheme.primary, Icons.Rounded.DateRange, Modifier.appear(2), count = today.size) }
-                        if (!state.loading && today.isEmpty()) item { Text("No classes today", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 12.dp).appear(2)) }
-                        itemsIndexed(today, key = { _, it -> it.id }) { index, session -> SessionCard(session, Modifier.appear(index + 2)) { nav.navigate("session/${session.id}") } }
+                        item { SectionLabel("Classes", MaterialTheme.colorScheme.primary, Icons.Rounded.DateRange, Modifier.appear(2), count = dayClasses.size) }
+                        item { DateStrip(days, selected, sessionDays, { selectedDay = it.toString() }, Modifier.appear(2)) }
+                        if (!state.loading && dayClasses.isEmpty()) item { Text(if (selected == LocalDate.now()) "No classes today" else "No classes on this date", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 12.dp).appear(2)) }
+                        itemsIndexed(dayClasses, key = { _, it -> it.id }) { index, session -> SessionCard(session, Modifier.appear(index + 2)) { nav.navigate("session/${session.id}") } }
                         item { SectionLabel("Settings", MaterialTheme.colorScheme.onSurfaceVariant, Icons.Rounded.Settings, Modifier.appear(3)) }
                         item { GlassCard(Modifier.appear(3)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -364,10 +371,14 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                             GlassIconButton(model::loadHistory, "Refresh") { Icon(Icons.Rounded.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
                         } }
                         if (!state.loading && state.history.isEmpty()) item { Text("No records yet", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 12.dp)) }
-                        itemsIndexed(state.history, key = { _, it -> it.session.id }) { index, record ->
-                            Column(Modifier.appear(index + 1)) {
-                                SessionCard(record.session.copy(status = record.status)) { nav.navigate("session/${record.session.id}") }
-                                GTextButton(onClick = { privacyKind = "correction"; privacySession = record.session.id }) { Text("Request correction") }
+                        val byDate = state.history.groupBy { Instant.parse(it.session.startsAt).atZone(ZoneId.systemDefault()).toLocalDate() }.toSortedMap(compareByDescending { it })
+                        byDate.forEach { (day, records) ->
+                            item(key = "day-$day") { SectionLabel(day.format(DateTimeFormatter.ofPattern("EEE, d MMM yyyy")), MaterialTheme.colorScheme.primary, Icons.Rounded.DateRange, Modifier.appear(1), count = records.size) }
+                            itemsIndexed(records, key = { _, it -> it.session.id }) { index, record ->
+                                Column(Modifier.appear(index + 1)) {
+                                    SessionCard(record.session.copy(status = record.status)) { nav.navigate("session/${record.session.id}") }
+                                    GTextButton(onClick = { privacyKind = "correction"; privacySession = record.session.id }) { Text("Request correction") }
+                                }
                             }
                         }
                         item { GOutlinedButton(onClick = { privacyKind = "deletion"; privacySession = null }) { Text("Request data deletion") } }
