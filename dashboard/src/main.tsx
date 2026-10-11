@@ -40,6 +40,17 @@ function playAlertTone(context: AudioContext) {
   });
 }
 
+let sharedAudio: AudioContext | null = null;
+function unlockAudio() {
+  try {
+    if (!sharedAudio) sharedAudio = new AudioContext();
+    if (sharedAudio.state !== 'running') void sharedAudio.resume();
+  } catch { /* Sound is optional; in-page alerts still work. */ }
+}
+function alertSound() { if (sharedAudio?.state === 'running') playAlertTone(sharedAudio); }
+window.addEventListener('pointerdown', unlockAudio);
+window.addEventListener('keydown', unlockAudio);
+
 async function api<T>(path: string, token?: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch('/api' + path, { ...options, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options.headers } });
   if (!response.ok) {
@@ -139,9 +150,8 @@ function Dashboard({ auth }: { auth: Auth }) {
   const [resources, setResources] = useState<Resource[]>([]);
   const [focusEvents, setFocusEvents] = useState<FocusEvent[]>([]);
   const [exitRequests, setExitRequests] = useState<ExitRequest[]>([]);
-  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [focusAlert, setFocusAlert] = useState('');
-  const alertAudio = useRef<AudioContext | null>(null);
   const [privacyRequests, setPrivacyRequests] = useState<PrivacyRequest[]>([]);
   const [resourceTitle, setResourceTitle] = useState('');
   const [resourceUrl, setResourceUrl] = useState('');
@@ -185,7 +195,7 @@ function Dashboard({ auth }: { auth: Auth }) {
     return () => { active = false; };
   }, [course, token]);
   useEffect(() => {
-    let active = true; let seenFocusIds: Set<string> | null = null; let seenRequestIds: Set<number> | null = null;
+    let active = true; let seenFocusIds: Set<string> | null = null; let seenRequestIds: Set<number> | null = null; let seenPendingStudents: Set<number> | null = null;
     selection.current++; setAttendance([]); setPending([]); setAudit([]); setResources([]); setFocusEvents([]); setExitRequests([]); setFocusAlert(''); setChallenge(null); setQrImage(''); setConfirmation(null);
     if (!session) { setLoadingAttendance(false); return; }
     setLoadingAttendance(true);
@@ -205,13 +215,19 @@ function Dashboard({ auth }: { auth: Auth }) {
           setAttendance(rows); setPending(requests); setAudit(events); setResources(files); setFocusEvents(focus); setExitRequests(exits);
           const newRequests = seenRequestIds === null ? [] : exits.filter(request => !seenRequestIds!.has(request.id));
           seenRequestIds = new Set(exits.map(request => request.id));
+          const newPending = seenPendingStudents === null ? [] : requests.filter(request => !seenPendingStudents!.has(request.student_id));
+          seenPendingStudents = new Set(requests.map(request => request.student_id));
+          if (newPending.length) {
+            setFocusAlert(`${newPending.length} student${newPending.length === 1 ? '' : 's'} asked you to review attendance.`);
+            if (soundEnabled) alertSound();
+          }
           if (newRequests.length) {
             setFocusAlert(`${newRequests.length} student${newRequests.length === 1 ? '' : 's'} need${newRequests.length === 1 ? 's' : ''} your approval: ${newRequests.map(request => request.kind === 'resume' ? 'left the app and wants to continue' : 'asks to end focus early').join(', ')}.`);
-            if (soundEnabled && alertAudio.current?.state === 'running') playAlertTone(alertAudio.current);
+            if (soundEnabled) alertSound();
           }
           if (newlyBackgrounded.length) {
             setFocusAlert(`${newlyBackgrounded.length} new focus interruption${newlyBackgrounded.length === 1 ? '' : 's'} for review. The reason and destination app are unknown, this is not a misconduct finding, and attendance is unchanged.`);
-            if (soundEnabled && alertAudio.current?.state === 'running') playAlertTone(alertAudio.current);
+            if (soundEnabled) alertSound();
             if (soundEnabled && 'Notification' in window && Notification.permission === 'granted') {
               try { new Notification('FocusLock · focus event for review', { body: `${newlyBackgrounded.length} new app background event${newlyBackgrounded.length === 1 ? '' : 's'}. Cause unknown; attendance unchanged.`, tag: `focuslock-${session.id}` }); } catch { /* In-page alert remains available. */ }
             }
@@ -228,19 +244,17 @@ function Dashboard({ auth }: { auth: Auth }) {
     const poll = window.setInterval(refresh, 5000);
     return () => { active = false; window.clearInterval(poll); };
   }, [session, token, soundEnabled]);
-  useEffect(() => () => { void alertAudio.current?.close(); }, []);
   async function toggleSound() {
     if (soundEnabled) { setSoundEnabled(false); return; }
+    unlockAudio();
     try {
-      const context = alertAudio.current ?? new AudioContext();
-      alertAudio.current = context;
-      await context.resume();
-      playAlertTone(context);
+      await sharedAudio?.resume();
+      alertSound();
       if ('Notification' in window && Notification.permission === 'default') {
         try { await Notification.requestPermission(); } catch { /* Sound and in-page alerts still work. */ }
       }
       setSoundEnabled(true);
-      setNotice('Sound alerts enabled for new focus interruptions while this dashboard is open.');
+      setNotice('Alert sounds are on.');
     } catch { setError('This browser could not enable sound. Check its audio settings.'); }
   }
   useEffect(() => {
@@ -392,7 +406,7 @@ function Dashboard({ auth }: { auth: Auth }) {
               {['checkin_pending', 'active', 'paused'].includes(session.state) && <button className="secondary" onClick={() => changeState('end')} disabled={saving !== null}>End session</button>}
             </div></div>
             <div className="focus-alert-controls">
-              <button className="secondary" type="button" aria-pressed={soundEnabled} onClick={() => void toggleSound()}>{soundEnabled ? 'Mute focus alerts' : 'Enable focus alert sound'}</button>
+              <button className="secondary" type="button" aria-pressed={soundEnabled} onClick={() => void toggleSound()}>{soundEnabled ? 'Mute alert sounds' : 'Turn on alert sounds'}</button>
             </div>
             {focusAlert && <div className="focus-alert-overlay"><div className="focus-alert-popup" role="alertdialog" aria-modal="true" aria-label="Notification"><span className="eyebrow">New notification</span><h3>Needs your attention</h3><p>{focusAlert}</p><div className="actions"><button type="button" onClick={() => { setSection('activity'); setFocusAlert(''); }}>View activity</button><button type="button" className="secondary" onClick={() => setFocusAlert('')}>Dismiss</button></div></div></div>}
             {session.state === 'ready' && !canOpen && <p className="inline-hint">{sessionExpired ? 'This session window has passed. Create a new session to open check-in.' : 'Check-in can open at the scheduled start time.'}</p>}
