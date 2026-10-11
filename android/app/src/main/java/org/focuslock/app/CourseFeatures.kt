@@ -40,6 +40,9 @@ class FocusLocal(private val context: Context) {
     fun token(): String = prefs.getString("policy", "") ?: ""
     fun deadline(studentId: Int, sessionId: Int): Pair<Int, Long>? = if (state(studentId, sessionId) == "active")
         prefs.getInt("boot", -1) to prefs.getLong("deadline", 0) else null
+    /** Boot count and deadline of the running focus session, whether it is active or paused. */
+    fun liveDeadline(studentId: Int, sessionId: Int): Pair<Int, Long>? = if (state(studentId, sessionId) in setOf("active", "paused"))
+        prefs.getInt("boot", -1) to prefs.getLong("deadline", 0) else null
     fun currentSession(studentId: Int): Int? = prefs.getInt("session", -1).takeIf {
         it > 0 && prefs.getInt("student", -1) == studentId && state(studentId, it) in setOf("active", "paused")
     }

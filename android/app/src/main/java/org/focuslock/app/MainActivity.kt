@@ -149,6 +149,8 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
     val state by model.state.collectAsStateWithLifecycle()
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
+    val dnd = rememberDndSetup(model)
+    LaunchedEffect(state.student?.id) { while (state.student != null) { model.refreshQuietStatus(); delay(1000) } }
     LaunchedEffect(state.student == null, state.authConfig == null) { if (state.student == null && state.authConfig == null) model.loadAuthConfig() }
     LaunchedEffect(callbackUri) { callbackUri?.let { model.completeCollegeSignIn(it); clearCallback() } }
     LaunchedEffect(state.student?.id) {
@@ -176,6 +178,14 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
     }
     if (resumeLocked) Dialog(onDismissRequest = {}, properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false, usePlatformDefaultWidth = false)) {
         GlassScreen { ResumeLockScreen(state.resumeLock) { state.focusSessionId?.let(model::requestResumeApproval) } }
+    }
+    // Do Not Disturb is required while a class focus session runs; if it is off for a moment, the app locks until it is back on.
+    val dndMissing = state.student != null && state.focusState in setOf("active", "paused") && !(state.dndReady && state.quietRequested && state.dndEffective)
+    var dndLocked by remember { mutableStateOf(false) }
+    LaunchedEffect(dndMissing) { if (dndMissing) { delay(2500); dndLocked = true } else dndLocked = false }
+    val appContext = LocalContext.current
+    if (dndLocked && !resumeLocked) Dialog(onDismissRequest = {}, properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false, usePlatformDefaultWidth = false)) {
+        GlassScreen { DndLockScreen(dnd.message) { if (QuietMode.access(appContext)) model.restoreQuiet() else dnd.open() } }
     }
     // The teacher ending a session turns focus off on every phone, whichever screen is open.
     LaunchedEffect(state.focusSessionId, state.student?.id) {
@@ -230,36 +240,12 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                 composable("sign-in") { SignIn(state.loading, state.authConfig, model::signIn, model::beginCollegeSignIn,
                     state.focusSessionId?.let { focusId -> { nav.navigate("focus/$focusId") } }) }
                 composable("today") {
-                    val context = LocalContext.current
                     val lifecycleOwner = LocalLifecycleOwner.current
-                    var quietDisclosure by remember { mutableStateOf(false) }
-                    var quietMessage by remember { mutableStateOf("") }
-                    var quietOpted by remember { mutableStateOf(QuietMode.optedIn(context)) }
-                    val quietSettings = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-                        if (QuietMode.access(context)) { model.enableQuietForFutureSessions(); quietOpted = true }
-                        else quietMessage = "DND access was not granted. Automatic focus remains available without it."
-                    }
-                    val quietNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-                        if (granted) { BackgroundNotice.suppressForExpectedExternalActivity(); quietSettings.launch(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) }
-                        else quietMessage = "A visible Stop action needs notification permission. DND remains off."
-                    }
                     LaunchedEffect(state.student?.id, lifecycleOwner) {
                         if (state.student != null) lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
                             while (true) { model.loadToday(); delay(10_000) }
                         }
                     }
-                    if (quietDisclosure) AlertDialog(onDismissRequest = { quietDisclosure = false },
-                        title = { Text("Automatic Do Not Disturb") },
-                        text = { Text("When you open an active session, or FocusLock detects one while open, its own DND rule can start automatically. Android controls call and message exceptions; review them before enabling. Stop DND any time in the app or its notification. Attendance is unaffected.") },
-                        confirmButton = { TextButton(onClick = {
-                            quietDisclosure = false
-                            if (!QuietMode.supported()) quietMessage = "Automatic DND needs Android 10 or newer."
-                            else if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
-                                quietNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            else if (!QuietMode.access(context)) { BackgroundNotice.suppressForExpectedExternalActivity(); quietSettings.launch(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) }
-                            else { model.enableQuietForFutureSessions(); quietOpted = true }
-                        }) { Text("Allow automatic DND") } },
-                        dismissButton = { TextButton(onClick = { quietDisclosure = false }) { Text("Not now") } })
                     val today = state.sessions.filter { Instant.parse(it.startsAt).atZone(ZoneId.systemDefault()).toLocalDate() == LocalDate.now() }
                     val todayList = rememberLazyListState()
                     LazyColumn(state = todayList, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
@@ -271,11 +257,11 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                             GlassIconButton(model::loadToday, "Refresh") { Icon(Icons.Rounded.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
                         } }
                         val waiting = state.pendingLocal.size
-                        if (state.focusSessionId != null || waiting > 0 || quietMessage.isNotBlank())
-                            item { SectionLabel("Alerts", alertColor(), Icons.Rounded.Notifications, Modifier.appear(1), count = listOfNotNull(state.focusSessionId, waiting.takeIf { it > 0 }, quietMessage.takeIf { it.isNotBlank() }).size) }
+                        val alertCount = listOf(!state.dndReady, state.focusSessionId != null, waiting > 0).count { it }
+                        if (alertCount > 0) item { SectionLabel("Alerts", alertColor(), Icons.Rounded.Notifications, Modifier.appear(1), count = alertCount) }
+                        if (!state.dndReady) item { AlertCard("Do Not Disturb is required", dnd.message.ifBlank { "Turn it on to join class sessions." }, "Set up", Modifier.appear(1)) { dnd.open() } }
                         state.focusSessionId?.let { focusId -> item { AlertCard("Focus in progress", "Pause or exit any time.", "Return to focus", Modifier.appear(1)) { nav.navigate("focus/$focusId") } } }
                         if (waiting > 0) item { AlertCard("Waiting for teacher review", "$waiting check-in${if (waiting == 1) "" else "s"} not counted yet.", modifier = Modifier.appear(1)) }
-                        if (quietMessage.isNotBlank()) item { AlertCard("Do Not Disturb", quietMessage, modifier = Modifier.appear(1)) }
                         item { SectionLabel("Classes", MaterialTheme.colorScheme.primary, Icons.Rounded.DateRange, Modifier.appear(2), count = today.size) }
                         if (!state.loading && today.isEmpty()) item { Text("No classes today", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 12.dp).appear(2)) }
                         itemsIndexed(today, key = { _, it -> it.id }) { index, session -> SessionCard(session, Modifier.appear(index + 2)) { nav.navigate("session/${session.id}") } }
@@ -284,43 +270,16 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text("Do Not Disturb", style = MaterialTheme.typography.titleMedium)
-                                    Text(if (quietOpted) "On during active classes" else "Off", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(if (state.dndReady) "Required · ready for class" else "Required · needs setup", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                if (quietOpted) GOutlinedButton(onClick = { model.stopQuiet(); quietOpted = false }) { Text("Turn off") }
-                                else GButton(onClick = { quietDisclosure = true }) { Text("Set up") }
+                                if (!state.dndReady) GButton(onClick = { dnd.open() }) { Text("Set up") }
                             }
                         } }
                     }
                 }
                 composable("session/{id}", arguments = listOf(navArgument("id") { type = NavType.IntType })) { backStack ->
                     val id = backStack.arguments!!.getInt("id")
-                    val context = LocalContext.current
-                    var quietDisclosure by remember { mutableStateOf(false) }
-                    var quietMessage by remember { mutableStateOf("") }
-                    val quietSettings = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-                        if (QuietMode.access(context)) model.enableQuiet(id)
-                        else quietMessage = "DND access was not granted. You can keep using attendance and course resources."
-                    }
-                    val quietNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-                        if (granted) { BackgroundNotice.suppressForExpectedExternalActivity(); quietSettings.launch(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) }
-                        else quietMessage = "Notifications are needed for the visible Stop quiet mode action."
-                    }
                     LaunchedEffect(id, state.student?.id) { if (state.student != null) model.loadDetail(id) }
-                    LaunchedEffect(id) {
-                        while (true) { delay(1000); model.refreshQuietStatus() }
-                    }
-                    if (quietDisclosure) AlertDialog(onDismissRequest = { quietDisclosure = false },
-                        title = { Text("Automatic quiet mode for class") },
-                        text = { Text("After you allow Do Not Disturb access once, FocusLock will turn on its own DND rule when you enter an active class session. It quiets notifications until the signed session timer expires, the session ends, or you tap Stop. Android may silence calls or messages depending on your DND exceptions; check those settings before enabling. You can always use your phone, dialer and messages, and stop quiet mode in the app or notification. Attendance and voluntary focus are unchanged if you decline.") },
-                        confirmButton = { TextButton(onClick = {
-                            quietDisclosure = false
-                            if (!QuietMode.supported()) quietMessage = "Automatic quiet mode needs Android 10 or newer."
-                            else if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
-                                quietNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            else if (!QuietMode.access(context)) { BackgroundNotice.suppressForExpectedExternalActivity(); quietSettings.launch(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) }
-                            else model.enableQuiet(id)
-                        }) { Text("Allow automatic quiet mode") } },
-                        dismissButton = { TextButton(onClick = { quietDisclosure = false }) { Text("Not now") } })
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)) {
                         item { BackButton { nav.popBackStack() } }
                         state.detail?.let { session ->
@@ -339,19 +298,20 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                                 }
                             } }
                             if (session.pendingReview || session.id in state.pendingLocal) item { AlertCard("Pending teacher review", "Not counted until your teacher confirms.", modifier = Modifier.appear(2)) }
-                            if (session.state in setOf("checkin_pending", "active") && (session.status == null || state.focusState !in setOf("active", "paused"))) item { GButton(onClick = { model.prepareScan(); nav.navigate("scan/${session.id}") }, modifier = Modifier.fillMaxWidth().appear(2)) { Text(if (session.status == null) "Scan classroom QR" else "Scan QR to rejoin focus") } }
+                            if (session.state in setOf("checkin_pending", "active") && (session.status == null || state.focusState !in setOf("active", "paused"))) item {
+                                if (state.dndReady) GButton(onClick = { model.prepareScan(); nav.navigate("scan/${session.id}") }, modifier = Modifier.fillMaxWidth().appear(2)) { Text(if (session.status == null) "Scan classroom QR" else "Scan QR to rejoin focus") }
+                                else AlertCard("Do Not Disturb is required", dnd.message.ifBlank { "Turn it on to scan and join this class." }, "Set up", Modifier.appear(2)) { dnd.open() }
+                            }
                             if (session.status == null && session.state != "ended") item { GTextButton(onClick = { model.prepareScan(); nav.navigate("scan/${session.id}") }) { Text("Can't scan? Ask for teacher review") } }
                             if (session.state == "active") item { GOutlinedButton(onClick = { nav.navigate("focus/${session.id}") }, modifier = Modifier.fillMaxWidth().appear(3)) { Text("Open focus") } }
                             if (session.state == "active") item { GlassCard(Modifier.appear(4)) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
                                         Text("Quiet mode", style = MaterialTheme.typography.titleMedium)
-                                        Text(if (state.quietRequested) "On for this class" else "Off", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(if (state.quietRequested && state.dndEffective) "On for this class" else if (state.dndReady) "Starts with focus" else "Required · needs setup", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
-                                    if (state.quietRequested) GOutlinedButton(onClick = model::stopQuiet) { Text("Stop") }
-                                    else GButton(onClick = { quietDisclosure = true }) { Text("Set up") }
+                                    if (!state.dndReady) GButton(onClick = { dnd.open() }) { Text("Set up") }
                                 }
-                                if (quietMessage.isNotBlank()) Text(quietMessage, style = MaterialTheme.typography.bodySmall)
                             } }
                             item { Text("Resources", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 6.dp)) }
                             if (state.receiverState == "reduced_evidence") item { Text("Classroom receiver unavailable. Ask your teacher for review if Bluetooth evidence is missing.", color = MaterialTheme.colorScheme.tertiary) }
@@ -369,7 +329,8 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                 composable("scan/{id}", arguments = listOf(navArgument("id") { type = NavType.IntType })) { backStack ->
                     val id = backStack.arguments!!.getInt("id")
                     ScanScreen(id, state.loading, id in state.pendingLocal || state.detail?.pendingReview == true, state.error, state.checkInResult,
-                        onQr = { model.acceptScannedCheckIn(id, it) }, onDecline = { model.declineScannedCheckIn(id) }, onReview = { model.requestReview(id, it) }, onBack = { nav.popBackStack() })
+                        onQr = { model.acceptScannedCheckIn(id, it) }, onDecline = { model.declineScannedCheckIn(id) }, onReview = { model.requestReview(id, it) }, onBack = { nav.popBackStack() },
+                        dndReady = state.dndReady, onSetupDnd = dnd.open)
                 }
                 composable("face-check/{id}", arguments = listOf(navArgument("id") { type = NavType.IntType })) { backStack ->
                     val id = backStack.arguments!!.getInt("id")

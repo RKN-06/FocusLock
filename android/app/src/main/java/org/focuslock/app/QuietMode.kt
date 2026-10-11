@@ -40,6 +40,11 @@ object QuietMode {
     fun access(context: Context): Boolean = supported() &&
         (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).isNotificationPolicyAccessGranted
     fun requested(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("active", false)
+    /** Do Not Disturb is required for class sessions: supported, agreed to, and Android access granted. */
+    fun ready(context: Context): Boolean = supported() && optedIn(context) && access(context)
+    /** True while FocusLock's rule is requested and Android is actually filtering interruptions. */
+    fun effective(context: Context): Boolean = requested(context) && access(context) &&
+        (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private fun manager(context: Context) = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -97,6 +102,21 @@ object QuietMode {
             Condition(conditionId(context), "FocusLock class session", Condition.STATE_TRUE))
     }
 
+    /** Puts the rule back if Do Not Disturb was switched off (or the rule disabled or removed) during a class session. */
+    fun reassert(context: Context) {
+        if (!live(context) || !access(context)) return
+        val notificationManager = manager(context)
+        val id = prefs(context).getString(RULE, null)
+        runCatching {
+            val rule = id?.let { notificationManager.getAutomaticZenRule(it) }
+            if (id != null && rule != null && !rule.isEnabled) {
+                rule.isEnabled = true
+                notificationManager.updateAutomaticZenRule(id, rule)
+            }
+            if (rule == null || notificationManager.currentInterruptionFilter == NotificationManager.INTERRUPTION_FILTER_ALL) activateRule(context)
+        }
+    }
+
     private fun deactivateRule(context: Context) {
         if (!access(context)) return
         val id = prefs(context).getString(RULE, null) ?: return
@@ -138,18 +158,14 @@ object QuietMode {
     }
 
     fun notification(context: Context): Notification {
-        val stop = PendingIntent.getService(context, 4105,
-            Intent(context, QuietSessionService::class.java).setAction(STOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val open = PendingIntent.getActivity(context, 4106,
             Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return Notification.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_lock_silent_mode)
-            .setContentTitle("FocusLock quiet mode is on")
-            .setContentText("Notifications are quieter for this class. Stop at any time.")
+            .setContentTitle("Do Not Disturb is on for class")
+            .setContentText("It is required during class and ends when the session ends.")
             .setContentIntent(open).setOngoing(true)
-            .addAction(Notification.Action.Builder(null, "Stop quiet mode", stop).build())
             .build()
     }
 
@@ -168,6 +184,7 @@ class QuietSessionService : Service() {
                 stopNow()
                 return
             }
+            QuietMode.reassert(this@QuietSessionService)
             handler.postDelayed(this, 1000L)
         }
     }

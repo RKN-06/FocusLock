@@ -31,6 +31,8 @@ data class UiState(
     val faceRoster: List<FaceRosterEntry> = emptyList(),
     val autoNavigateFocusId: Int? = null,
     val quietRequested: Boolean = false,
+    val dndReady: Boolean = false,
+    val dndEffective: Boolean = false,
     val receiverState: String = "unknown",
     val presenceState: String = "off",
     val authConfig: AuthConfig? = null,
@@ -256,8 +258,24 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun refreshQuietStatus() {
         QuietMode.reconcile(quietContext)
+        QuietMode.reassert(quietContext)
+        val current = mutable.value
         val requested = QuietMode.requested(quietContext)
-        if (requested != mutable.value.quietRequested) mutable.value = mutable.value.copy(quietRequested = requested)
+        val ready = QuietMode.ready(quietContext)
+        val effective = QuietMode.effective(quietContext)
+        if (requested != current.quietRequested || ready != current.dndReady || effective != current.dndEffective)
+            mutable.value = current.copy(quietRequested = requested, dndReady = ready, dndEffective = effective)
+    }
+    /** Turns Do Not Disturb back on for the running class session after the student switched it off. */
+    fun restoreQuiet() {
+        val studentId = mutable.value.student?.id ?: focus.localStudentId() ?: return
+        val id = mutable.value.focusSessionId ?: return
+        if (!QuietMode.ready(quietContext)) return
+        QuietMode.reassert(quietContext)
+        if (!QuietMode.requested(quietContext)) focus.liveDeadline(studentId, id)?.let { (boot, deadline) ->
+            runCatching { QuietMode.begin(quietContext, studentId, id, boot, deadline) }
+        }
+        refreshQuietStatus()
     }
     fun prepareScan() { mutable.value = mutable.value.copy(checkInResult = null, error = null) }
     private fun savePending(id: Int, include: Boolean) {
@@ -322,8 +340,6 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     fun pauseFocus(id: Int) {
-        QuietMode.stop(quietContext)
-        mutable.value = mutable.value.copy(quietRequested = false)
         stopPresence()
         stopVpnConsent()
         val studentId = mutable.value.student?.id ?: focus.localStudentId() ?: return

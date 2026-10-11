@@ -76,7 +76,8 @@ fun QrScanner(onQr: (String) -> Unit, onError: (String) -> Unit, modifier: Modif
 }
 
 @Composable
-fun ScanScreen(sessionId: Int, loading: Boolean, pending: Boolean, error: String?, result: String?, onQr: (String) -> Unit, onDecline: () -> Unit, onReview: (String) -> Unit, onBack: () -> Unit) {
+fun ScanScreen(sessionId: Int, loading: Boolean, pending: Boolean, error: String?, result: String?, onQr: (String) -> Unit, onDecline: () -> Unit, onReview: (String) -> Unit, onBack: () -> Unit,
+               dndReady: Boolean = true, onSetupDnd: () -> Unit = {}) {
     val context = LocalContext.current
     var granted by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
@@ -87,7 +88,7 @@ fun ScanScreen(sessionId: Int, loading: Boolean, pending: Boolean, error: String
     if (pendingQr != null) AlertDialog(
         onDismissRequest = { pendingQr = null; scanned = false },
         title = { Text("Before submitting your QR") },
-        text = { Text("If you accept, FocusLock will record this QR check-in and automatically start voluntary focus when this class is active. While focus is active, leaving the app with the screen on may send a neutral review event to your teacher. You can Pause or Exit at any time; this does not change an existing attendance record. DND needs separate Android access. If you decline, this QR will not grant attendance automatically. Your request will go to your teacher for review; you are not automatically marked absent. This QR may expire while you decide, so you may need to scan the current code again.") },
+        text = { Text("If you accept, FocusLock will record this QR check-in and automatically start voluntary focus when this class is active. While focus is active, leaving the app with the screen on may send a neutral review event to your teacher. You can Pause or Exit at any time; this does not change an existing attendance record. Do Not Disturb is required: it turns on with focus and stays on until focus ends. If you decline, this QR will not grant attendance automatically. Your request will go to your teacher for review; you are not automatically marked absent. This QR may expire while you decide, so you may need to scan the current code again.") },
         confirmButton = { GTextButton(onClick = { val qr = pendingQr!!; pendingQr = null; onQr(qr) }) { Text("Accept and submit QR") } },
         dismissButton = { GTextButton(onClick = { pendingQr = null; onDecline() }) { Text("Decline · teacher review") } }
     )
@@ -97,6 +98,7 @@ fun ScanScreen(sessionId: Int, loading: Boolean, pending: Boolean, error: String
         Text("The code refreshes every 20 seconds. A check-in is evidence of participation, not proof of presence.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         val cameraAvailable = context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
         if (!cameraAvailable) Text("No camera on this device. Request teacher review below.")
+        else if (!dndReady) AlertCard("Do Not Disturb is required", "Turn it on to scan and join. You can also request teacher review below.", "Set up", onAction = onSetupDnd)
         else if (!granted) GButton(onClick = { launcher.launch(Manifest.permission.CAMERA) }, modifier = Modifier.fillMaxWidth()) { Text("Allow camera") }
         else if (!scanned && result == null && cameraError == null) CameraFrame(aspect = 1f, guide = false) { QrScanner(onQr = { value -> scanned = true; pendingQr = value }, onError = { cameraError = it }, modifier = Modifier.fillMaxSize()) }
         cameraError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
