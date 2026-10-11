@@ -33,6 +33,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.ui.text.font.FontWeight
 import androidx.core.content.ContextCompat
@@ -268,7 +270,17 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                             }
                             GlassIconButton(model::loadToday, "Refresh") { Icon(Icons.Rounded.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
                         } }
-                        item { GlassCard(Modifier.appear(1)) {
+                        val waiting = state.pendingLocal.size
+                        if (state.focusSessionId != null || waiting > 0 || quietMessage.isNotBlank())
+                            item { SectionLabel("Alerts", alertColor(), Icons.Rounded.Notifications, Modifier.appear(1), count = listOfNotNull(state.focusSessionId, waiting.takeIf { it > 0 }, quietMessage.takeIf { it.isNotBlank() }).size) }
+                        state.focusSessionId?.let { focusId -> item { AlertCard("Focus in progress", "Pause or exit any time.", "Return to focus", Modifier.appear(1)) { nav.navigate("focus/$focusId") } } }
+                        if (waiting > 0) item { AlertCard("Waiting for teacher review", "$waiting check-in${if (waiting == 1) "" else "s"} not counted yet.", modifier = Modifier.appear(1)) }
+                        if (quietMessage.isNotBlank()) item { AlertCard("Do Not Disturb", quietMessage, modifier = Modifier.appear(1)) }
+                        item { SectionLabel("Classes", MaterialTheme.colorScheme.primary, Icons.Rounded.DateRange, Modifier.appear(2), count = today.size) }
+                        if (!state.loading && today.isEmpty()) item { Text("No classes today", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 12.dp).appear(2)) }
+                        itemsIndexed(today, key = { _, it -> it.id }) { index, session -> SessionCard(session, Modifier.appear(index + 2)) { nav.navigate("session/${session.id}") } }
+                        item { SectionLabel("Settings", MaterialTheme.colorScheme.onSurfaceVariant, Icons.Rounded.Settings, Modifier.appear(3)) }
+                        item { GlassCard(Modifier.appear(3)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text("Do Not Disturb", style = MaterialTheme.typography.titleMedium)
@@ -277,11 +289,7 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                                 if (quietOpted) GOutlinedButton(onClick = { model.stopQuiet(); quietOpted = false }) { Text("Turn off") }
                                 else GButton(onClick = { quietDisclosure = true }) { Text("Set up") }
                             }
-                            if (quietMessage.isNotBlank()) Text(quietMessage, style = MaterialTheme.typography.bodySmall)
                         } }
-                        state.focusSessionId?.let { focusId -> item { GButton(onClick = { nav.navigate("focus/$focusId") }, modifier = Modifier.fillMaxWidth()) { Text("Return to focus") } } }
-                        if (!state.loading && today.isEmpty()) item { Text("No classes today", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 12.dp).appear(2)) }
-                        itemsIndexed(today, key = { _, it -> it.id }) { index, session -> SessionCard(session, Modifier.appear(index + 2)) { nav.navigate("session/${session.id}") } }
                     }
                 }
                 composable("session/{id}", arguments = listOf(navArgument("id") { type = NavType.IntType })) { backStack ->
@@ -329,8 +337,8 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                                     }
                                     GlassChip(session.state.replace('_', ' ').replaceFirstChar { it.uppercase() })
                                 }
-                                if (session.pendingReview || session.id in state.pendingLocal) Text("Pending teacher review", color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.bodyMedium)
                             } }
+                            if (session.pendingReview || session.id in state.pendingLocal) item { AlertCard("Pending teacher review", "Not counted until your teacher confirms.", modifier = Modifier.appear(2)) }
                             if (session.state in setOf("checkin_pending", "active") && (session.status == null || state.focusState !in setOf("active", "paused"))) item { GButton(onClick = { model.prepareScan(); nav.navigate("scan/${session.id}") }, modifier = Modifier.fillMaxWidth().appear(2)) { Text(if (session.status == null) "Scan classroom QR" else "Scan QR to rejoin focus") } }
                             if (session.status == null && session.state != "ended") item { GTextButton(onClick = { model.prepareScan(); nav.navigate("scan/${session.id}") }) { Text("Can't scan? Ask for teacher review") } }
                             if (session.state == "active") item { GOutlinedButton(onClick = { nav.navigate("focus/${session.id}") }, modifier = Modifier.fillMaxWidth().appear(3)) { Text("Open focus") } }

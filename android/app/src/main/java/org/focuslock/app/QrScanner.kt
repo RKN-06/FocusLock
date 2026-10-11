@@ -103,7 +103,7 @@ fun ScanScreen(sessionId: Int, loading: Boolean, pending: Boolean, error: String
         if (loading) CircularProgressIndicator()
         if (result != null) Text(result, color = MaterialTheme.colorScheme.primary)
         if (error != null) { Text(error, color = MaterialTheme.colorScheme.error); if (scanned) GTextButton(onClick = { scanned = false }) { Text("Scan again") } }
-        if (pending) Text("Pending teacher review. Nothing is counted yet.", color = MaterialTheme.colorScheme.tertiary)
+        if (pending) AlertCard("Pending teacher review", "Nothing is counted yet.")
         GTextField(reason, { reason = it }, "Reason for teacher review")
         GOutlinedButton(onClick = { onReview(reason) }, enabled = !loading && reason.trim().length >= 10, modifier = Modifier.fillMaxWidth()) { Text("Request teacher review") }
     }

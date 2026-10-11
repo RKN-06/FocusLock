@@ -41,6 +41,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -393,4 +399,42 @@ fun Modifier.heroParallax(state: LazyListState): Modifier = graphicsLayer {
     val offset = if (state.firstVisibleItemIndex == 0) state.firstVisibleItemScrollOffset.toFloat() else 600f
     translationY = offset * 0.45f
     alpha = 1f - (offset / 520f).coerceIn(0f, 0.75f)
+}
+
+/** Amber is reserved for alerts; classes and content use the teal brand colour. */
+@Composable
+fun alertColor(): Color = if (LocalGlass.current.dark) Color(0xFFF2C46B) else Color(0xFFB45F06)
+
+@Composable
+fun SectionLabel(text: String, color: Color, icon: ImageVector, modifier: Modifier = Modifier, count: Int? = null) {
+    val ink = if (LocalGlass.current.dark) Color(0xFF1D1500) else Color.White
+    Row(modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
+        Text(text.uppercase(), color = color, style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold))
+        if (count != null && count > 0) Text(count.toString(), color = ink, style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.background(color, CircleShape).padding(horizontal = 8.dp, vertical = 1.dp))
+    }
+}
+
+/** An alert: amber edge, bell, and an optional action. Looks different from class cards on purpose. */
+@Composable
+fun AlertCard(title: String, message: String? = null, actionLabel: String? = null, modifier: Modifier = Modifier, onAction: (() -> Unit)? = null) {
+    val amber = alertColor()
+    val ink = if (LocalGlass.current.dark) Color(0xFF1D1500) else Color.White
+    Row(modifier.fillMaxWidth().animateContentSize().glass(RoundedCornerShape(22.dp), 8.dp).background(amber.copy(alpha = 0.13f)).height(IntrinsicSize.Min)) {
+        Box(Modifier.width(5.dp).fillMaxHeight().background(amber))
+        Column(Modifier.weight(1f).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Rounded.Notifications, contentDescription = null, tint = amber, modifier = Modifier.size(18.dp))
+                Text(title, style = MaterialTheme.typography.titleMedium)
+            }
+            if (message != null) Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (actionLabel != null && onAction != null) {
+                val source = remember { MutableInteractionSource() }
+                Button(onAction, Modifier.padding(top = 4.dp).pressScale(source), shape = ButtonShape, contentPadding = ButtonPadding, interactionSource = source,
+                    colors = ButtonDefaults.buttonColors(containerColor = amber, contentColor = ink),
+                    elevation = ButtonDefaults.buttonElevation(0.dp, 0.dp, 0.dp, 0.dp, 0.dp)) { Text(actionLabel) }
+            }
+        }
+    }
 }

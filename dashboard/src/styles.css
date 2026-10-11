@@ -156,3 +156,18 @@ h2,h3,h4{line-height:1.25}.course-header h2{line-height:1.2}.session-banner h3{l
 .resource-form{row-gap:12px;align-items:end}.resource-form label,.resource-form .check-label{margin:0}.resource-form .check-label{align-self:center;padding-bottom:10px}.resource-form button{margin-top:4px}
 .content-section .inline-hint{margin:16px 0 0}.content-section .empty-inline{margin-top:16px}
 .activity-grid{align-items:start}.mini-card .event-row{margin:0}.mini-card .event-row:first-of-type{border-top:0}
+
+/* Alerts vs classes: alerts are amber with a bell and a count; classes keep the teal accent. */
+:root{--alert:#b45f06;--on-alert:#fff}
+:root[data-theme="dark"]{--alert:#f2c46b;--on-alert:#1d1500}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--alert:#f2c46b;--on-alert:#1d1500}}
+.dashboard-shell>.alerts-section{margin:0 0 22px;padding:20px 26px 14px 28px;border:1px solid var(--warn-line);border-left:6px solid var(--alert);border-radius:18px}
+.alerts-section .eyebrow,.focus-alert-popup .eyebrow{color:var(--alert);display:inline-flex;align-items:center;gap:7px}
+.alerts-section .eyebrow::before,.focus-alert-popup .eyebrow::before{content:"";width:15px;height:15px;background:currentColor;-webkit-mask:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4a1.5 1.5 0 0 0-3 0v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z'/></svg>") center/contain no-repeat;mask:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4a1.5 1.5 0 0 0-3 0v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z'/></svg>") center/contain no-repeat;transform-origin:50% 0}
+.alerts-section .eyebrow::before{animation:ring 3.2s ease-in-out infinite}
+@keyframes ring{0%,60%,100%{rotate:0deg}66%{rotate:16deg}72%{rotate:-13deg}78%{rotate:9deg}84%{rotate:-5deg}90%{rotate:0deg}}
+.alert-badge{display:inline-grid;place-items:center;min-width:26px;height:26px;margin-right:9px;padding:0 8px;border-radius:99px;background:var(--alert);color:var(--on-alert);font-size:14px;font-weight:800;vertical-align:1px}
+.alerts-section h3{display:flex;align-items:center}
+.course-sidebar,.workspace-panel{border-top:4px solid var(--accent)}
+
+.alerts-section .section-heading .alert-badge{color:var(--on-alert);font-size:14px}
