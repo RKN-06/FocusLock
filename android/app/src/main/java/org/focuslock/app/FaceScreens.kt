@@ -81,10 +81,10 @@ fun FaceVerifyScreen(template: FloatArray?, onMatched: () -> Unit, onGiveUp: (St
         else { notice = "$message Try again ($failures of $MAX_FAILURES)."; attempt += 1 }
     }
     Column(Modifier.fillMaxSize().padding(vertical = 8.dp).glass().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text("Confirm it is you", style = MaterialTheme.typography.headlineMedium)
-        Text("Your phone compares your face with the record your college made. The camera picture stays on this phone: it is not saved or sent. The match is evidence for your teacher, not proof.")
+        Text("Confirm it's you", style = MaterialTheme.typography.headlineMedium)
+        Text("Your face is compared on this phone. The camera image is never saved or sent.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (template != null) {
-            if (!granted) Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }) { Text("Allow camera for the face check") }
+            if (!granted) GButton(onClick = { launcher.launch(Manifest.permission.CAMERA) }, modifier = Modifier.fillMaxWidth()) { Text("Allow camera") }
             else key(attempt) {
                 CameraFrame {
                     FaceCapture(requireBlink = true, frames = 3,
@@ -96,8 +96,8 @@ fun FaceVerifyScreen(template: FloatArray?, onMatched: () -> Unit, onGiveUp: (St
             }
         }
         notice?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        OutlinedButton(onClick = { onGiveUp("I chose teacher review instead of the face check") }) { Text("Ask my teacher to review instead") }
-        TextButton(onClick = onCancel) { Text("Cancel") }
+        GOutlinedButton(onClick = { onGiveUp("I chose teacher review instead of the face check") }, modifier = Modifier.fillMaxWidth()) { Text("Ask my teacher to review") }
+        GTextButton(onClick = onCancel) { Text("Cancel") }
     }
 }
 
@@ -116,7 +116,7 @@ fun FaceEnrollScreen(roster: List<FaceRosterEntry>, loading: Boolean, message: S
     LaunchedEffect(Unit) { onRefresh() }
     LazyColumn(Modifier.padding(vertical = 8.dp).glass(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Record student faces", style = MaterialTheme.typography.headlineMedium) }
-        item { Text("Do this in person. The student looks at this phone and blinks once. Only a 128-number template is stored, encrypted on the server. Record a face only with the student's agreement.") }
+        item { Text("Do this in person, with the student's agreement. They look at the phone and blink once.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         if (loading) item { CircularProgressIndicator() }
         message?.let { item { Text(it, color = MaterialTheme.colorScheme.primary) } }
         error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
@@ -128,8 +128,8 @@ fun FaceEnrollScreen(roster: List<FaceRosterEntry>, loading: Boolean, message: S
                         Checkbox(checked = consent, onCheckedChange = { consent = it })
                         Text("${student.name} agrees to this face record for attendance checks.")
                     }
-                    if (!granted) Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }) { Text("Allow camera") }
-                    else if (!capturing) Button(onClick = { captureError = null; capturing = true }, enabled = consent) { Text("Start camera") }
+                    if (!granted) GButton(onClick = { launcher.launch(Manifest.permission.CAMERA) }) { Text("Allow camera") }
+                    else if (!capturing) GButton(onClick = { captureError = null; capturing = true }, enabled = consent) { Text("Start camera") }
                     else {
                         key(student.id) {
                             CameraFrame {
@@ -142,24 +142,24 @@ fun FaceEnrollScreen(roster: List<FaceRosterEntry>, loading: Boolean, message: S
                         Text(status, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium)
                     }
                     captureError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    TextButton(onClick = { selected = null; consent = false; capturing = false }) { Text("Cancel") }
+                    GTextButton(onClick = { selected = null; consent = false; capturing = false }) { Text("Cancel") }
                 }
             }
         }
-        item { TextButton(onClick = onRefresh, enabled = !loading) { Text("Refresh list") } }
+        item { GTextButton(onClick = onRefresh, enabled = !loading) { Text("Refresh") } }
         items(roster, key = { it.id }) { student ->
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(student.name, style = MaterialTheme.typography.titleMedium)
                 Text("${student.email} · ${if (student.enrolled) "Face recorded" else "No face recorded"}", style = MaterialTheme.typography.bodySmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { selected = student; consent = false; capturing = false; captureError = null }, enabled = !loading) {
+                    GOutlinedButton(onClick = { selected = student; consent = false; capturing = false; captureError = null }, enabled = !loading) {
                         Text(if (student.enrolled) "Re-record" else "Record face")
                     }
-                    if (student.enrolled) OutlinedButton(onClick = { onDelete(student.id) }, enabled = !loading) { Text("Delete record") }
+                    if (student.enrolled) GOutlinedButton(onClick = { onDelete(student.id) }, enabled = !loading) { Text("Delete") }
                 }
             }
         }
-        if (!loading && roster.isEmpty()) item { Text("No students to show.") }
+        if (!loading && roster.isEmpty()) item { Text("No students", color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
 
@@ -168,18 +168,17 @@ fun FaceEnrollScreen(roster: List<FaceRosterEntry>, loading: Boolean, message: S
 fun ResumeLockScreen(state: String, onRequest: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(20.dp).glass().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)) {
         Text("You left FocusLock", style = MaterialTheme.typography.headlineMedium)
-        Text("Your teacher must approve before you can continue. Attendance is not changed by this.")
+        Text("Your teacher must approve before you continue. Attendance isn't affected.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         when (state) {
-            "pending" -> { CircularProgressIndicator(); Text("Waiting for your teacher to approve…") }
+            "pending" -> { CircularProgressIndicator(); Text("Waiting for your teacher…") }
             "denied" -> {
-                Text("Your teacher did not approve yet. You can ask again.", color = MaterialTheme.colorScheme.error)
-                Button(onClick = onRequest) { Text("Ask again") }
+                Text("Not approved yet. You can ask again.", color = MaterialTheme.colorScheme.error)
+                GButton(onClick = onRequest) { Text("Ask again") }
             }
             else -> {
-                Text("Sending your request to the teacher…")
-                OutlinedButton(onClick = onRequest) { Text("Send request now") }
+                Text("Sending your request…")
+                GOutlinedButton(onClick = onRequest) { Text("Send now") }
             }
         }
-        Text("If the session ends or the signed focus time runs out, this lock clears on its own.", style = MaterialTheme.typography.bodySmall)
     }
 }

@@ -12,7 +12,25 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.DateRange
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.ui.text.font.FontWeight
 import androidx.core.content.ContextCompat
 import androidx.activity.viewModels
 import androidx.activity.compose.setContent
@@ -32,6 +50,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -70,13 +90,21 @@ class MainActivity : ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         // Keep session content out of screenshots, screen recording, casting, and recents previews.
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         QuietMode.reconcile(this)
         callbackUri = intent?.data
         setContent {
-            MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xFF17584B), background = Color(0xFFF5F6F1))) {
-                Surface(Modifier.fillMaxSize().background(glassBackdrop), color = Color.Transparent) { FocusLock(callbackUri = callbackUri, clearCallback = { callbackUri = null }, model = model) }
+            var themeMode by remember { mutableStateOf(UiPrefs.load(this@MainActivity)) }
+            FocusLockTheme(themeMode) {
+                Box(Modifier.fillMaxSize()) {
+                    GlassBackdrop()
+                    Surface(Modifier.fillMaxSize(), color = Color.Transparent, contentColor = MaterialTheme.colorScheme.onBackground) {
+                        FocusLock(callbackUri = callbackUri, clearCallback = { callbackUri = null }, model = model, themeMode = themeMode,
+                            onThemeToggle = { themeMode = themeMode.next(); UiPrefs.save(this@MainActivity, themeMode) })
+                    }
+                }
             }
         }
     }
@@ -100,18 +128,11 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// Frosted-glass surface: translucent white fill with a bright edge, drawn over the gradient backdrop.
-internal fun Modifier.glass(shape: Shape = RoundedCornerShape(24.dp)): Modifier = this
-    .clip(shape)
-    .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.72f), Color.White.copy(alpha = 0.40f))))
-    .border(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = 0.95f), Color.White.copy(alpha = 0.25f))), shape)
-
-internal val glassBackdrop = Brush.linearGradient(listOf(Color(0xFFCFEFE4), Color(0xFFD9E6F7), Color(0xFFE8DCF5)))
-
 private fun time(value: String): String = DateTimeFormatter.ofPattern("EEE, d MMM · HH:mm").withZone(ZoneId.systemDefault()).format(Instant.parse(value))
 
 @Composable
-fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: FocusViewModel = viewModel()) {
+fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: FocusViewModel = viewModel(),
+              themeMode: ThemeMode = ThemeMode.System, onThemeToggle: () -> Unit = {}) {
     val state by model.state.collectAsStateWithLifecycle()
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
@@ -141,9 +162,7 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
         while (id != null && state.student != null && state.resumeLock == "pending") { delay(3_000); model.pollResume(id) }
     }
     if (resumeLocked) Dialog(onDismissRequest = {}, properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false, usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize().background(glassBackdrop), color = Color.Transparent) {
-            ResumeLockScreen(state.resumeLock) { state.focusSessionId?.let(model::requestResumeApproval) }
-        }
+        GlassScreen { ResumeLockScreen(state.resumeLock) { state.focusSessionId?.let(model::requestResumeApproval) } }
     }
     // The teacher ending a session turns focus off on every phone, whichever screen is open.
     LaunchedEffect(state.focusSessionId, state.student?.id) {
@@ -152,20 +171,36 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
     }
     Scaffold(containerColor = Color.Transparent, bottomBar = {
         val focusLocked = entry?.destination?.route == "focus/{id}" && state.focusState in setOf("active", "paused")
-        if (state.student != null && state.student?.role == "student" && !focusLocked && !resumeLocked) NavigationBar(containerColor = Color.White.copy(alpha = 0.55f)) {
-            NavigationBarItem(selected = entry?.destination?.route == "today", onClick = { nav.navigate("today") { popUpTo("today"); launchSingleTop = true } }, icon = { Text("◷") }, label = { Text("Today") })
-            NavigationBarItem(selected = entry?.destination?.route == "history", onClick = { nav.navigate("history") { popUpTo("today"); launchSingleTop = true } }, icon = { Text("≡") }, label = { Text("History") })
+        val showTabs = state.student != null && state.student?.role == "student" && !focusLocked && !resumeLocked
+        AnimatedVisibility(showTabs, enter = fadeIn(tween(300)) + androidx.compose.animation.slideInVertically(tween(350)) { it }, exit = fadeOut(tween(150)) + androidx.compose.animation.slideOutVertically(tween(250)) { it }) {
+            GlassTabBar(
+                tabs = listOf(TabItem("today", "Today", Icons.Rounded.Home), TabItem("history", "History", Icons.Rounded.DateRange)),
+                selected = entry?.destination?.route,
+                onSelect = { route -> nav.navigate(route) { popUpTo("today"); launchSingleTop = true } })
         }
     }) { padding ->
-        Column(Modifier.padding(padding).padding(horizontal = 20.dp).fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("FocusLock", style = MaterialTheme.typography.headlineSmall)
-                if (state.student != null && state.focusState !in setOf("active", "paused")) TextButton(onClick = model::signOut) { Text("Sign out") }
+        Column(Modifier.padding(padding).padding(horizontal = 20.dp).fillMaxSize().imePadding()) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("FocusLock", style = MaterialTheme.typography.headlineSmall)
+                    if (state.authConfig?.developmentLogin == true) GlassChip("Demo")
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GlassIconButton(onThemeToggle, themeMode.label) {
+                        AnimatedContent(themeMode, transitionSpec = { (fadeIn(tween(220)) + scaleIn(tween(220), 0.6f)) togetherWith (fadeOut(tween(120)) + scaleOut(tween(120), 0.6f)) }, label = "theme-glyph") { mode ->
+                            Text(mode.glyph, style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+                    if (state.student != null && state.focusState !in setOf("active", "paused")) GTextButton(onClick = model::signOut) { Text("Sign out") }
+                }
             }
-            if (state.authConfig?.developmentLogin == true) Text("LOCAL DEMO · Sample data only", style = MaterialTheme.typography.labelSmall)
-            if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 8.dp))
-            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 12.dp)) }
-            NavHost(navController = nav, startDestination = "sign-in", modifier = Modifier.weight(1f)) {
+            AnimatedVisibility(state.loading) { LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 8.dp).clip(RoundedCornerShape(50))) }
+            AnimatedVisibility(state.error != null) { Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth().glass(RoundedCornerShape(16.dp), 0.dp).padding(14.dp)) }
+            NavHost(navController = nav, startDestination = "sign-in", modifier = Modifier.weight(1f),
+                enterTransition = { fadeIn(tween(320)) + slideInHorizontally(tween(380)) { it / 10 } + scaleIn(tween(380), 0.97f) },
+                exitTransition = { fadeOut(tween(180)) + slideOutHorizontally(tween(300)) { -it / 14 } },
+                popEnterTransition = { fadeIn(tween(320)) + slideInHorizontally(tween(380)) { -it / 10 } + scaleIn(tween(380), 0.97f) },
+                popExitTransition = { fadeOut(tween(180)) + slideOutHorizontally(tween(300)) { it / 14 } }) {
                 composable("sign-in") { SignIn(state.loading, state.authConfig, model::signIn, model::beginCollegeSignIn,
                     state.focusSessionId?.let { focusId -> { nav.navigate("focus/$focusId") } }) }
                 composable("today") {
@@ -200,22 +235,28 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                         }) { Text("Allow automatic DND") } },
                         dismissButton = { TextButton(onClick = { quietDisclosure = false }) { Text("Not now") } })
                     val today = state.sessions.filter { Instant.parse(it.startsAt).atZone(ZoneId.systemDefault()).toLocalDate() == LocalDate.now() }
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 16.dp)) {
-                        item { Text("Today's classes", style = MaterialTheme.typography.headlineMedium) }
-                        item { Text("Hello, ${state.student?.name.orEmpty()}. Your phone stays under your control.") }
-                        item { Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Automatic class focus", style = MaterialTheme.typography.titleMedium)
-                            Text("A focus disclosure appears immediately after each QR scan. No setup is required here. If you accept, that class can start voluntary focus when it becomes active. Pause or Exit remains available at any time.")
-                            Text(if (quietOpted) "Automatic DND enabled for active classes." else "Automatic DND is off until Android grants access.")
-                            if (quietOpted) OutlinedButton(onClick = { model.stopQuiet(); quietOpted = false }) { Text("Turn off automatic DND") }
-                            else OutlinedButton(onClick = { quietDisclosure = true }) { Text("Set up automatic DND") }
-                            if (quietMessage.isNotBlank()) Text(quietMessage)
-                        } } }
-                        state.focusSessionId?.let { focusId -> item { Button(onClick = { nav.navigate("focus/$focusId") }) { Text("Return to focus · Pause or Exit") } } }
-                        item { TextButton(onClick = model::loadToday, enabled = !state.loading) { Text("Refresh") } }
-                        if (!state.loading && today.isEmpty()) item { Text("No classes scheduled today. Attendance from earlier sessions is in History.") }
-                        items(today, key = { it.id }) { session -> SessionCard(session) { nav.navigate("session/${session.id}") } }
-                        item { Text("Camera scanning is optional. Ask your teacher to confirm attendance if you cannot or choose not to scan.", style = MaterialTheme.typography.bodySmall) }
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
+                        item { Row(Modifier.fillMaxWidth().appear(0), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+                            Column {
+                                Text("Hello, ${state.student?.name?.substringBefore(' ').orEmpty()}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                                Text("Today's classes", style = MaterialTheme.typography.headlineLarge)
+                            }
+                            GlassIconButton(model::loadToday, "Refresh") { Icon(Icons.Rounded.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
+                        } }
+                        item { GlassCard(Modifier.appear(1)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Do Not Disturb", style = MaterialTheme.typography.titleMedium)
+                                    Text(if (quietOpted) "On during active classes" else "Off", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                if (quietOpted) GOutlinedButton(onClick = { model.stopQuiet(); quietOpted = false }) { Text("Turn off") }
+                                else GButton(onClick = { quietDisclosure = true }) { Text("Set up") }
+                            }
+                            if (quietMessage.isNotBlank()) Text(quietMessage, style = MaterialTheme.typography.bodySmall)
+                        } }
+                        state.focusSessionId?.let { focusId -> item { GButton(onClick = { nav.navigate("focus/$focusId") }, modifier = Modifier.fillMaxWidth()) { Text("Return to focus") } } }
+                        if (!state.loading && today.isEmpty()) item { Text("No classes today", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 12.dp).appear(2)) }
+                        itemsIndexed(today, key = { _, it -> it.id }) { index, session -> SessionCard(session, Modifier.appear(index + 2)) { nav.navigate("session/${session.id}") } }
                     }
                 }
                 composable("session/{id}", arguments = listOf(navArgument("id") { type = NavType.IntType })) { backStack ->
@@ -247,43 +288,49 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                             else model.enableQuiet(id)
                         }) { Text("Allow automatic quiet mode") } },
                         dismissButton = { TextButton(onClick = { quietDisclosure = false }) { Text("Not now") } })
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(vertical = 16.dp)) {
-                        item { TextButton(onClick = { nav.popBackStack() }) { Text("Back") } }
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)) {
+                        item { BackButton { nav.popBackStack() } }
                         state.detail?.let { session ->
-                            item { Text(session.course, style = MaterialTheme.typography.labelLarge) }
-                            item { Text(session.title, style = MaterialTheme.typography.headlineMedium) }
-                            item { Text("${time(session.startsAt)}\nUntil ${time(session.endsAt)}") }
-                            item { Text("Session: ${session.state.replace('_', ' ')}") }
-                            if (session.state == "active") item {
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text("Quiet notifications", style = MaterialTheme.typography.titleLarge)
-                                    Text(if (state.quietRequested) "FocusLock quiet mode is requested for this session. Android DND exceptions control which calls and messages alert you." else "Optional: automatically turn on Do Not Disturb when you enter an active session.")
-                                    if (state.quietRequested) OutlinedButton(onClick = model::stopQuiet) { Text("Stop quiet mode now") }
-                                    else Button(onClick = { quietDisclosure = true }) { Text("Set up automatic quiet mode") }
-                                    if (quietMessage.isNotBlank()) Text(quietMessage)
+                            item { Column(Modifier.appear(0), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(session.course, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                                Text(session.title, style = MaterialTheme.typography.headlineMedium)
+                                Text("${time(session.startsAt)} – ${time(session.endsAt).substringAfterLast(" · ")}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            } }
+                            item { GlassCard(Modifier.appear(1)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Column {
+                                        Text("Attendance", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(session.status?.replaceFirstChar { it.uppercase() } ?: "Not recorded", style = MaterialTheme.typography.titleLarge)
+                                    }
+                                    GlassChip(session.state.replace('_', ' ').replaceFirstChar { it.uppercase() })
+                                }
+                                if (session.pendingReview || session.id in state.pendingLocal) Text("Pending teacher review", color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.bodyMedium)
+                            } }
+                            if (session.state in setOf("checkin_pending", "active") && (session.status == null || state.focusState !in setOf("active", "paused"))) item { GButton(onClick = { model.prepareScan(); nav.navigate("scan/${session.id}") }, modifier = Modifier.fillMaxWidth().appear(2)) { Text(if (session.status == null) "Scan classroom QR" else "Scan QR to rejoin focus") } }
+                            if (session.status == null && session.state != "ended") item { GTextButton(onClick = { model.prepareScan(); nav.navigate("scan/${session.id}") }) { Text("Can't scan? Ask for teacher review") } }
+                            if (session.state == "active") item { GOutlinedButton(onClick = { nav.navigate("focus/${session.id}") }, modifier = Modifier.fillMaxWidth().appear(3)) { Text("Open focus") } }
+                            if (session.state == "active") item { GlassCard(Modifier.appear(4)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("Quiet mode", style = MaterialTheme.typography.titleMedium)
+                                        Text(if (state.quietRequested) "On for this class" else "Off", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    if (state.quietRequested) GOutlinedButton(onClick = model::stopQuiet) { Text("Stop") }
+                                    else GButton(onClick = { quietDisclosure = true }) { Text("Set up") }
+                                }
+                                if (quietMessage.isNotBlank()) Text(quietMessage, style = MaterialTheme.typography.bodySmall)
+                            } }
+                            item { Text("Resources", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 6.dp)) }
+                            if (state.receiverState == "reduced_evidence") item { Text("Classroom receiver unavailable. Ask your teacher for review if Bluetooth evidence is missing.", color = MaterialTheme.colorScheme.tertiary) }
+                            if (state.resources.isEmpty()) item { Text("Nothing attached yet", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            itemsIndexed(state.resources, key = { _, it -> it.id }) { index, resource ->
+                                GlassCard(Modifier.appear(index + 5), onClick = { nav.navigate("resource/${resource.id}") }) {
+                                    Text(resource.title, style = MaterialTheme.typography.titleMedium)
+                                    Text("${resource.kind.uppercase()} · ${if (resource.downloadable) "Offline allowed" else "View only"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
-                            item { Card { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Text("Attendance: ${session.status ?: "Not recorded"}", style = MaterialTheme.typography.titleMedium)
-                                Text("QR check-ins and teacher confirmations appear here. If a record looks wrong, ask your teacher to correct it.")
-                            } } }
-                            if (session.pendingReview || session.id in state.pendingLocal) item { Text("Pending teacher review. This is not recorded attendance yet.", color = MaterialTheme.colorScheme.tertiary) }
-                            if (session.state in setOf("checkin_pending", "active") && (session.status == null || state.focusState !in setOf("active", "paused"))) item { Button(onClick = { model.prepareScan(); nav.navigate("scan/${session.id}") }) { Text(if (session.status == null) "Scan classroom QR" else "Scan QR to rejoin focus") } }
-                            if (session.status == null && session.state != "ended") item { TextButton(onClick = { model.prepareScan(); nav.navigate("scan/${session.id}") }) { Text("Camera unavailable? Request teacher review") } }
-                            item { Text("Focus is your choice", style = MaterialTheme.typography.titleLarge) }
-                            item { Text("Scanning is optional. A QR check-in is evidence of participation, not proof of physical presence. This app does not lock your phone.") }
-                            if (session.state == "active") item { Button(onClick = { nav.navigate("focus/${session.id}") }) { Text("Open voluntary focus") } }
-                            item { Text("Course resources", style = MaterialTheme.typography.titleLarge) }
-                            if (state.receiverState == "reduced_evidence") item { Text("Classroom receiver unavailable or not configured. Bluetooth evidence may be missing; ask your teacher for review. Attendance is unchanged.", color = MaterialTheme.colorScheme.tertiary) }
-                            if (state.resources.isEmpty()) item { Text("No course documents attached yet.") }
-                            items(state.resources, key = { it.id }) { resource ->
-                                OutlinedCard(onClick = { nav.navigate("resource/${resource.id}") }) { Column(Modifier.padding(16.dp)) {
-                                    Text(resource.title, style = MaterialTheme.typography.titleMedium)
-                                    Text("${resource.kind.uppercase()} · ${if (resource.downloadable) "Offline copy allowed" else "View only"}")
-                                } }
-                            }
                         }
-                        item { OutlinedButton(onClick = { model.loadDetail(id) }, enabled = !state.loading) { Text("Refresh attendance") } }
+                        item { GTextButton(onClick = { model.loadDetail(id) }, enabled = !state.loading) { Text("Refresh") } }
                     }
                 }
                 composable("scan/{id}", arguments = listOf(navArgument("id") { type = NavType.IntType })) { backStack ->
@@ -309,25 +356,28 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                     LaunchedEffect(state.student?.id) { if (state.student != null) model.loadHistory() }
                     if (privacyKind != null) AlertDialog(onDismissRequest = { privacyKind = null },
                         title = { Text(if (privacyKind == "correction") "Request attendance correction" else "Request data deletion") },
-                        text = { OutlinedTextField(value = privacyReason, onValueChange = { privacyReason = it },
-                            label = { Text("Reason (at least 10 characters)") }, minLines = 3) },
+                        text = { GTextField(value = privacyReason, onValueChange = { privacyReason = it },
+                            label = "Reason (at least 10 characters)", minLines = 3) },
                         confirmButton = { TextButton(onClick = {
                             model.submitPrivacyRequest(privacyKind!!, privacySession, privacyReason.trim())
                             privacyKind = null; privacyReason = ""
                         }, enabled = privacyReason.trim().length >= 10) { Text("Send request") } },
                         dismissButton = { TextButton(onClick = { privacyKind = null }) { Text("Cancel") } })
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 16.dp)) {
-                        item { Text("Attendance history", style = MaterialTheme.typography.headlineMedium) }
-                        item { Text("Your records only · QR check-ins and teacher confirmations") }
-                        item { TextButton(onClick = model::loadHistory, enabled = !state.loading) { Text("Refresh") } }
-                        if (!state.loading && state.history.isEmpty()) item { Text("No attendance records yet.") }
-                        items(state.history, key = { it.session.id }) { record ->
-                            SessionCard(record.session.copy(status = record.status)) { nav.navigate("session/${record.session.id}") }
-                            TextButton(onClick = { privacyKind = "correction"; privacySession = record.session.id }) { Text("Request correction") }
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
+                        item { Row(Modifier.fillMaxWidth().appear(0), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("History", style = MaterialTheme.typography.headlineLarge)
+                            GlassIconButton(model::loadHistory, "Refresh") { Icon(Icons.Rounded.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
+                        } }
+                        if (!state.loading && state.history.isEmpty()) item { Text("No records yet", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 12.dp)) }
+                        itemsIndexed(state.history, key = { _, it -> it.session.id }) { index, record ->
+                            Column(Modifier.appear(index + 1)) {
+                                SessionCard(record.session.copy(status = record.status)) { nav.navigate("session/${record.session.id}") }
+                                GTextButton(onClick = { privacyKind = "correction"; privacySession = record.session.id }) { Text("Request correction") }
+                            }
                         }
-                        item { OutlinedButton(onClick = { privacyKind = "deletion"; privacySession = null }) { Text("Request data deletion") } }
+                        item { GOutlinedButton(onClick = { privacyKind = "deletion"; privacySession = null }) { Text("Request data deletion") } }
                         items(state.privacyRequests, key = { "request-${it.id}" }) { request ->
-                            Text("${request.kind.replaceFirstChar { it.uppercase() }} request #${request.id}: ${request.status}${request.resolution?.let { " · $it" } ?: ""}")
+                            Text("${request.kind.replaceFirstChar { it.uppercase() }} request #${request.id}: ${request.status}${request.resolution?.let { " · $it" } ?: ""}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -385,7 +435,7 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                         text = {
                             if (!cameraGranted) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("Camera access is needed to scan the teacher's code. You can also ask the teacher to approve instead.")
-                                Button(onClick = { cameraPermission.launch(Manifest.permission.CAMERA) }) { Text("Allow camera for this scan") }
+                                GButton(onClick = { cameraPermission.launch(Manifest.permission.CAMERA) }) { Text("Allow camera for this scan") }
                             }
                             else QrScanner(onQr = { value -> scanningExit = false; model.exitFocusWithQr(id, value) }, onError = { scanningExit = false; phoneMessage = it }, modifier = Modifier.fillMaxWidth().height(260.dp))
                         },
@@ -419,47 +469,48 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                             else model.startPresence(id)
                         }) { Text("Enable Bluetooth evidence") } },
                         dismissButton = { TextButton(onClick = { bleDisclosure = false }) { Text("Continue without Bluetooth") } })
-                    Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxSize().padding(vertical = 8.dp).glass().verticalScroll(rememberScrollState()).padding(20.dp)) {
-                        Text("Voluntary focus", style = MaterialTheme.typography.headlineMedium)
-                        Text("Status: ${state.focusState}")
-                        Text("Your phone remains yours. Focus participation and attendance are separate. An interruption does not tell us which app was opened or why.")
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxSize().padding(vertical = 8.dp).glass().verticalScroll(rememberScrollState()).padding(24.dp)) {
                         val classState = state.detail?.takeIf { it.id == id }?.state
-                        if (state.focusState == "ready" || state.focusState == "ended") {
-                            if (classState == "ended") Text("This session has ended. Focus cannot be started or rejoined.", color = MaterialTheme.colorScheme.tertiary)
-                            else Text("Focus starts by itself after you scan the teacher's QR and pass the face check, once the class is active. There is no way to start it without both.", color = MaterialTheme.colorScheme.tertiary)
-                            if (state.student != null && classState != "ended") Button(onClick = { model.prepareScan(); nav.navigate("scan/$id") }) { Text(if (state.focusState == "ended") "Scan QR to rejoin focus" else "Scan QR to join focus") }
+                        Spacer(Modifier.height(8.dp))
+                        FocusOrb(state.focusState)
+                        AnimatedContent(state.focusState, transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(150)) }, label = "focus-title") { focus ->
+                            Text(when (focus) { "active" -> "Focus is on"; "paused" -> "Paused"; "ended" -> "Focus ended"; else -> "Ready" }, style = MaterialTheme.typography.headlineMedium)
                         }
-                        if (state.focusState == "active") Button(onClick = { model.pauseFocus(id) }) { Text("Pause now") }
-                        if (state.focusState == "paused") Button(onClick = { model.resumeFocus(id) }) { Text("Resume") }
-                        if (state.focusState in setOf("active", "paused")) OutlinedButton(onClick = { exitDialog = true }, enabled = state.exitRequest != "pending") { Text("Exit focus now") }
-                        if (state.exitRequest == "pending") Text("Waiting for your teacher to approve. Focus continues until they respond.", color = MaterialTheme.colorScheme.tertiary)
-                        if (state.exitRequest == "denied") Text("Your teacher did not approve ending focus. You can scan their QR instead.", color = MaterialTheme.colorScheme.error)
+                        if (state.focusState == "ready" || state.focusState == "ended") {
+                            if (classState == "ended") Text("This session has ended.", color = MaterialTheme.colorScheme.tertiary)
+                            else Text("Scan the teacher's QR to join once class is active.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (state.student != null && classState != "ended") GButton(onClick = { model.prepareScan(); nav.navigate("scan/$id") }, modifier = Modifier.fillMaxWidth()) { Text(if (state.focusState == "ended") "Scan QR to rejoin" else "Scan QR to join") }
+                        }
+                        if (state.focusState == "active") GButton(onClick = { model.pauseFocus(id) }, modifier = Modifier.fillMaxWidth()) { Text("Pause") }
+                        if (state.focusState == "paused") GButton(onClick = { model.resumeFocus(id) }, modifier = Modifier.fillMaxWidth()) { Text("Resume") }
+                        if (state.focusState in setOf("active", "paused")) GOutlinedButton(onClick = { exitDialog = true }, enabled = state.exitRequest != "pending", modifier = Modifier.fillMaxWidth()) { Text("Exit focus") }
+                        if (state.exitRequest == "pending") Text("Waiting for your teacher to approve", color = MaterialTheme.colorScheme.tertiary)
+                        if (state.exitRequest == "denied") Text("Not approved. You can scan their QR instead.", color = MaterialTheme.colorScheme.error)
                         if (state.focusState in setOf("active", "paused")) {
-                            OutlinedButton(onClick = {
+                            GOutlinedButton(onClick = {
                                 BackgroundNotice.suppressForExpectedExternalActivity()
                                 runCatching { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:"))) }
                                     .onFailure { phoneMessage = "No phone dialer is available on this device." }
-                            }) { Text("Open phone") }
+                            }, modifier = Modifier.fillMaxWidth()) { Text("Open phone") }
                         }
                         if (phoneMessage.isNotBlank()) Text(phoneMessage, color = MaterialTheme.colorScheme.error)
                         if (BuildConfig.ENABLE_LOCAL_VPN && state.focusState == "active") {
-                            if (vpnRunning) OutlinedButton(onClick = { VpnFeature.stop(context); model.stopVpnConsent(); vpnRunning = false }) { Text("Stop local VPN now") }
-                            else Button(onClick = { disclosure = true }) { Text("Enable optional local VPN") }
+                            if (vpnRunning) GOutlinedButton(onClick = { VpnFeature.stop(context); model.stopVpnConsent(); vpnRunning = false }, modifier = Modifier.fillMaxWidth()) { Text("Stop local VPN") }
+                            else GButton(onClick = { disclosure = true }, modifier = Modifier.fillMaxWidth()) { Text("Enable local VPN") }
                         }
                         if (vpnMessage.isNotBlank()) Text(vpnMessage)
                         if (BuildConfig.ENABLE_BLE_PRESENCE && state.focusState == "active") {
-                            if (bleStatus == "advertising" || bleStatus == "starting") OutlinedButton(onClick = { model.stopPresence(); bleStatus = "off" }) { Text("Stop Bluetooth now") }
-                            else Button(onClick = { bleDisclosure = true }) { Text("Enable optional Bluetooth evidence") }
-                            Text("Bluetooth: $bleStatus. Receiver: ${state.receiverState}. Missing evidence never marks absence.")
+                            if (bleStatus == "advertising" || bleStatus == "starting") GOutlinedButton(onClick = { model.stopPresence(); bleStatus = "off" }, modifier = Modifier.fillMaxWidth()) { Text("Stop Bluetooth") }
+                            else GButton(onClick = { bleDisclosure = true }, modifier = Modifier.fillMaxWidth()) { Text("Enable Bluetooth evidence") }
+                            Text("Bluetooth: $bleStatus · Receiver: ${state.receiverState}", style = MaterialTheme.typography.bodySmall)
                         }
-                        Text("Pause works without internet. Ending focus early needs the teacher's current QR or approval, so it needs a connection. The signed policy still expires on this device's elapsed clock, and focus turns off for everyone when the teacher ends the session. If the app cannot report an event, the teacher's status is unknown.", style = MaterialTheme.typography.bodySmall)
-                        Text("While focus is active, leaving the app with the screen on may show a local reminder and send a neutral background-interruption flag for teacher review. Screen-off and an approved exit do not trigger it. FocusLock cannot identify another app or why you left. Attendance is unchanged.", style = MaterialTheme.typography.bodySmall)
-                        if (state.focusState !in setOf("active", "paused")) TextButton(onClick = { nav.popBackStack() }) { Text("Back to session") }
+                        if (state.focusState !in setOf("active", "paused")) GTextButton(onClick = { nav.popBackStack() }) { Text("Back to session") }
                     }
                 }
                 composable("resource/{id}", arguments = listOf(navArgument("id") { type = NavType.IntType })) { backStack ->
                     val resource = state.resources.find { it.id == backStack.arguments!!.getInt("id") }
-                    if (resource == null) Text("Resource unavailable. Return to the session and refresh.")
+                    if (resource == null) Text("Resource unavailable. Go back and refresh.")
                     else ResourceViewer(resource) { nav.popBackStack() }
                 }
             }
@@ -472,34 +523,40 @@ private fun SignIn(loading: Boolean, config: AuthConfig?, submit: (String, Strin
                    collegeSignIn: () -> Unit, offlineFocus: (() -> Unit)?) {
     var email by rememberSaveable { mutableStateOf("student@focuslock.test") }
     var password by remember { mutableStateOf("") }
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(20.dp), contentPadding = PaddingValues(20.dp), modifier = Modifier.padding(vertical = 16.dp).glass()) {
-        item { Text("Welcome to class.", style = MaterialTheme.typography.headlineLarge) }
-        if (config?.developmentLogin == true) {
-            item { Text("Sign in to see your classes and attendance. Development accounts only.") }
-            item { OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") }, singleLine = true, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, keyboardType = KeyboardType.Email), modifier = Modifier.fillMaxWidth()) }
-            item { OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Demo password") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth()) }
-            item { Button(onClick = { submit(email.trim().lowercase(), password.trim()); password = "" }, enabled = !loading && email.isNotBlank() && password.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Sign in") } }
-            item { Text("Use DEV_PASSWORD from your local .env. No phone permissions are required. Teachers can confirm attendance without the app.", style = MaterialTheme.typography.bodySmall) }
-        } else {
-            item { Text("Use your college account to see classes and attendance.") }
-            item { Button(onClick = collegeSignIn, enabled = !loading && config?.collegeOidc == true && config.authorizationEndpoint != null && config.androidClientId != null && config.androidRedirectUri != null) { Text("Sign in with college") } }
-            if (config?.collegeOidc == false) item { Text("College authentication needs administrator configuration.") }
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(Modifier.fillMaxWidth().appear(0).glass().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text("Welcome to class", style = MaterialTheme.typography.headlineLarge)
+            if (config?.developmentLogin == true) {
+                GTextField(email, { email = it }, "Email", singleLine = true, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, keyboardType = KeyboardType.Email))
+                GTextField(password, { password = it }, "Password", singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, keyboardType = KeyboardType.Password))
+                GButton(onClick = { submit(email.trim().lowercase(), password.trim()); password = "" }, enabled = !loading && email.isNotBlank() && password.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Sign in") }
+            } else {
+                GButton(onClick = collegeSignIn, enabled = !loading && config?.collegeOidc == true && config.authorizationEndpoint != null && config.androidClientId != null && config.androidRedirectUri != null, modifier = Modifier.fillMaxWidth()) { Text("Sign in with college") }
+                if (config?.collegeOidc == false) Text("College sign-in isn't set up yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            offlineFocus?.let { open -> GOutlinedButton(onClick = open, modifier = Modifier.fillMaxWidth()) { Text("Open saved focus session") } }
         }
-        offlineFocus?.let { open -> item { OutlinedButton(onClick = open) { Text("Open saved focus session") } } }
     }
 }
 
 @Composable
-private fun SessionCard(session: ClassSession, open: () -> Unit) {
-    Card(onClick = open, colors = CardDefaults.cardColors(containerColor = Color.Transparent), modifier = Modifier.fillMaxWidth().glass()) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(session.course, style = MaterialTheme.typography.labelLarge)
-            Text(session.title, style = MaterialTheme.typography.titleLarge)
-            Text(time(session.startsAt))
-            Text("Attendance: ${session.status ?: "Not recorded"}", color = MaterialTheme.colorScheme.primary)
-            Text("View session →", style = MaterialTheme.typography.labelMedium)
+private fun SessionCard(session: ClassSession, modifier: Modifier = Modifier, open: () -> Unit) {
+    GlassCard(modifier, onClick = open) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(session.course, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                Text(session.title, style = MaterialTheme.typography.titleLarge)
+                Text(time(session.startsAt), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            GlassChip(session.status?.replaceFirstChar { it.uppercase() } ?: "Not recorded",
+                color = if (session.status == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
         }
     }
+}
+
+@Composable
+private fun BackButton(onClick: () -> Unit) {
+    GlassIconButton(onClick, "Back") { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
 }
 
 @Composable
@@ -534,22 +591,24 @@ private fun ResourceViewer(resource: CourseResource, back: () -> Unit) {
     }
     DisposableEffect(file) { val transient = file?.takeIf { it.parentFile == context.cacheDir }; onDispose { transient?.delete() } }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { TextButton(onClick = back) { Text("Back") } }
-        item { Text(resource.title, style = MaterialTheme.typography.headlineMedium) }
-        item { Text("College resource · ${resource.kind.uppercase()}") }
+        item { BackButton(back) }
+        item { Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(resource.title, style = MaterialTheme.typography.headlineMedium)
+            GlassChip(resource.kind.uppercase())
+        } }
         if (resource.downloadable) item {
-            OutlinedButton(onClick = { scope.launch { fetch(true) } }, enabled = !saved && !busy) { Text(if (saved) "Saved privately for offline use" else "Save private offline copy") }
+            GOutlinedButton(onClick = { scope.launch { fetch(true) } }, enabled = !saved && !busy) { Text(if (saved) "Saved for offline use" else "Save offline copy") }
         }
-        if (saved) item { TextButton(onClick = { if (store.removeCached(resource)) { saved = false; file = null; text = null; bitmap = null } }) { Text("Delete offline copy") } }
+        if (saved) item { GTextButton(onClick = { if (store.removeCached(resource)) { saved = false; file = null; text = null; bitmap = null } }) { Text("Delete offline copy") } }
         if (busy) item { CircularProgressIndicator() }
         error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error) } }
         if (resource.kind == "text") text?.let { body -> item { Text(body) } }
         if (resource.kind == "pdf") {
             bitmap?.let { image -> item { Image(image.asImageBitmap(), contentDescription = "PDF page ${page + 1}", modifier = Modifier.fillMaxWidth()) } }
-            if (pages > 0) item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = { page-- }, enabled = page > 0) { Text("Previous") }
-                Text("${page + 1} / $pages", modifier = Modifier.padding(top = 12.dp))
-                OutlinedButton(onClick = { page++ }, enabled = page + 1 < pages) { Text("Next") }
+            if (pages > 0) item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                GOutlinedButton(onClick = { page-- }, enabled = page > 0) { Text("Previous") }
+                Text("${page + 1} / $pages")
+                GOutlinedButton(onClick = { page++ }, enabled = page + 1 < pages) { Text("Next") }
             } }
         }
     }

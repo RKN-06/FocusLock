@@ -13,6 +13,8 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -86,24 +88,23 @@ fun ScanScreen(sessionId: Int, loading: Boolean, pending: Boolean, error: String
         onDismissRequest = { pendingQr = null; scanned = false },
         title = { Text("Before submitting your QR") },
         text = { Text("If you accept, FocusLock will record this QR check-in and automatically start voluntary focus when this class is active. While focus is active, leaving the app with the screen on may send a neutral review event to your teacher. You can Pause or Exit at any time; this does not change an existing attendance record. DND needs separate Android access. If you decline, this QR will not grant attendance automatically. Your request will go to your teacher for review; you are not automatically marked absent. This QR may expire while you decide, so you may need to scan the current code again.") },
-        confirmButton = { TextButton(onClick = { val qr = pendingQr!!; pendingQr = null; onQr(qr) }) { Text("Accept and submit QR") } },
-        dismissButton = { TextButton(onClick = { pendingQr = null; onDecline() }) { Text("Decline · teacher review") } }
+        confirmButton = { GTextButton(onClick = { val qr = pendingQr!!; pendingQr = null; onQr(qr) }) { Text("Accept and submit QR") } },
+        dismissButton = { GTextButton(onClick = { pendingQr = null; onDecline() }) { Text("Decline · teacher review") } }
     )
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        TextButton(onClick = onBack) { Text("Back") }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        GlassIconButton(onBack, "Back") { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
         Text("Scan classroom QR", style = MaterialTheme.typography.headlineMedium)
-        Text("The teacher's code changes every 20 seconds. A check-in is evidence of participation, not proof of physical presence.")
+        Text("The code refreshes every 20 seconds. A check-in is evidence of participation, not proof of presence.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         val cameraAvailable = context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
-        if (!cameraAvailable) Text("This device has no camera. Ask your teacher for confirmation or request review below.")
-        else if (!granted) Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }) { Text("Allow camera for this scan") }
+        if (!cameraAvailable) Text("No camera on this device. Request teacher review below.")
+        else if (!granted) GButton(onClick = { launcher.launch(Manifest.permission.CAMERA) }, modifier = Modifier.fillMaxWidth()) { Text("Allow camera") }
         else if (!scanned && result == null && cameraError == null) CameraFrame(aspect = 1f, guide = false) { QrScanner(onQr = { value -> scanned = true; pendingQr = value }, onError = { cameraError = it }, modifier = Modifier.fillMaxSize()) }
         cameraError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         if (loading) CircularProgressIndicator()
         if (result != null) Text(result, color = MaterialTheme.colorScheme.primary)
-        if (error != null) { Text(error, color = MaterialTheme.colorScheme.error); if (scanned) TextButton(onClick = { scanned = false }) { Text("Scan current code again") } }
-        if (pending) Text("Pending on this device. Nothing is counted yet. Send a request for teacher review when online.", color = MaterialTheme.colorScheme.tertiary)
-        OutlinedTextField(value = reason, onValueChange = { reason = it }, label = { Text("Reason for teacher review") }, modifier = Modifier.fillMaxWidth())
-        OutlinedButton(onClick = { onReview(reason) }, enabled = !loading && reason.trim().length >= 10) { Text("Send teacher review request") }
-        Text("If scanning is unavailable or you decline it, your teacher can confirm attendance directly. Expired codes are never accepted from a device timestamp.", style = MaterialTheme.typography.bodySmall)
+        if (error != null) { Text(error, color = MaterialTheme.colorScheme.error); if (scanned) GTextButton(onClick = { scanned = false }) { Text("Scan again") } }
+        if (pending) Text("Pending teacher review. Nothing is counted yet.", color = MaterialTheme.colorScheme.tertiary)
+        GTextField(reason, { reason = it }, "Reason for teacher review")
+        GOutlinedButton(onClick = { onReview(reason) }, enabled = !loading && reason.trim().length >= 10, modifier = Modifier.fillMaxWidth()) { Text("Request teacher review") }
     }
 }
