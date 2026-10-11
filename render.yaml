@@ -1,0 +1,95 @@
+# TEST-ONLY Render demo blueprint. Seeded demo accounts on a public URL: never use real student data.
+# Production needs college OIDC (see docs/VERCEL_DEPLOYMENT.md steps 2-4 and .env.production.example).
+# Secrets marked generateValue are created by Render; read DEV_PASSWORD from the focuslock-api service's Environment tab.
+databases:
+  - name: focuslock-db
+    plan: free # free Postgres expires after 30 days; switch to a paid plan to keep data
+    databaseName: focuslock
+    user: focuslock
+
+services:
+  - type: web
+    name: focuslock-api
+    runtime: python
+    plan: free # free web services sleep when idle
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # Same sequence as compose.yaml: migrate, seed an empty dev database, serve.
+    startCommand: alembic upgrade head && python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port $PORT --no-access-log
+    healthCheckPath: /health/ready
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.9
+      - key: DATABASE_URL
+        fromDatabase:
+          name: focuslock-db
+          property: connectionString
+      - key: APP_ENV
+        value: development
+      - key: ENABLE_DEV_AUTH
+        value: "true"
+      - key: DEV_PASSWORD
+        generateValue: true
+      - key: QR_SIGNING_KEY
+        generateValue: true
+      - key: POLICY_SIGNING_KEY
+        generateValue: true
+      - key: BLE_TOKEN_KEY
+        generateValue: true
+      - key: FACE_TEMPLATE_KEY
+        generateValue: true
+      - key: CRON_SECRET
+        generateValue: true
+      - key: FACE_CHECK_MODE
+        value: enrolled
+      - key: PLAY_INTEGRITY_MODE
+        value: "off"
+      - key: RESOURCE_ALLOWED_HOSTS
+        value: college.example.edu
+      # The dashboard calls /api on its own origin (rewritten below), so CORS is only a fallback.
+      - key: CORS_ORIGINS
+        value: https://focuslock-dashboard.onrender.com
+
+  - type: web
+    name: focuslock-dashboard
+    runtime: static
+    rootDir: dashboard
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    routes:
+      # Keep in sync with the focuslock-api hostname Render assigns (the name gets a suffix if already taken).
+      - type: rewrite
+        source: /api/*
+        destination: https://focuslock-api.onrender.com/*
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: Referrer-Policy
+        value: no-referrer
+      - path: /*
+        name: Content-Security-Policy
+        value: "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'"
+
+# Daily retention purge (python -m app.retention). Render cron jobs are not free, so it is disabled for the demo.
+# Enable it before holding any real data:
+#  - type: cron
+#    name: focuslock-retention
+#    runtime: python
+#    plan: starter
+#    rootDir: backend
+#    schedule: "0 2 * * *"
+#    buildCommand: pip install -r requirements.txt
+#    startCommand: python -m app.retention
+#    envVars:
+#      - key: DATABASE_URL
+#        fromDatabase: { name: focuslock-db, property: connectionString }
+#      - key: APP_ENV
+#        value: development
