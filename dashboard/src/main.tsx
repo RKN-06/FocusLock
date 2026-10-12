@@ -15,18 +15,6 @@ try {
   if (savedTheme === 'light' || savedTheme === 'dark') document.documentElement.setAttribute('data-theme', savedTheme);
 } catch { /* Storage can be blocked; the system theme still applies. */ }
 
-if (window.matchMedia('(prefers-reduced-motion: no-preference) and (pointer: fine)').matches) {
-  let frame = 0;
-  window.addEventListener('pointermove', event => {
-    if (frame) return;
-    frame = requestAnimationFrame(() => {
-      frame = 0;
-      document.documentElement.style.setProperty('--mx', String(event.clientX / window.innerWidth - 0.5));
-      document.documentElement.style.setProperty('--my', String(event.clientY / window.innerHeight - 0.5));
-    });
-  }, { passive: true });
-}
-
 type User = { id: number; name: string; email: string; role: 'student' | 'teacher' | 'admin'; kind?: 'regular' | 'reregistered' | 'other' };
 type Course = { id: number; code: string; title: string; term: string; groups?: { id: number; name: string; members: number }[]; students?: number };
 type Session = { id: number; course_id: number; title: string; room_code: string; starts_at: string; ends_at: string; state: 'ready' | 'checkin_pending' | 'active' | 'paused' | 'ended' };
@@ -185,6 +173,9 @@ function Dashboard({ auth }: { auth: Auth }) {
   const [focusEvents, setFocusEvents] = useState<FocusEvent[]>([]);
   const [exitRequests, setExitRequests] = useState<ExitRequest[]>([]);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const soundRef = useRef(true);
+  soundRef.current = soundEnabled;
+  const shownSession = useRef<number | null>(null);
   const [focusAlert, setFocusAlertState] = useState('');
   const [alertLog, setAlertLog] = useState<AlertItem[]>([]);
   useEffect(() => { armNotifications(); }, []);
@@ -232,9 +223,11 @@ function Dashboard({ auth }: { auth: Auth }) {
   }, [course, token]);
   useEffect(() => {
     let active = true; let seenFocusIds: Set<string> | null = null; let seenRequestIds: Set<number> | null = null; let seenPendingStudents: Set<number> | null = null;
-    selection.current++; setAttendance([]); setPending([]); setAudit([]); setResources([]); setFocusEvents([]); setExitRequests([]); setFocusAlert(''); setChallenge(null); setQrImage(''); setConfirmation(null);
+    const switched = shownSession.current !== (session?.id ?? null);
+    shownSession.current = session?.id ?? null;
+    if (switched) { selection.current++; setAttendance([]); setPending([]); setAudit([]); setResources([]); setFocusEvents([]); setExitRequests([]); setFocusAlert(''); setChallenge(null); setQrImage(''); setConfirmation(null); }
     if (!session) { setLoadingAttendance(false); return; }
-    setLoadingAttendance(true);
+    if (switched) setLoadingAttendance(true);
     const refresh = async () => {
       try {
         const [rows, requests, events, files, focus, exits] = await Promise.all([
@@ -255,16 +248,16 @@ function Dashboard({ auth }: { auth: Auth }) {
           seenPendingStudents = new Set(requests.map(request => request.student_id));
           if (newPending.length) {
             setFocusAlert(`${newPending.length} student${newPending.length === 1 ? '' : 's'} asked you to review attendance.`);
-            if (soundEnabled) alertSound();
+            if (soundRef.current) alertSound();
           }
           if (newRequests.length) {
             setFocusAlert(`${newRequests.length} student${newRequests.length === 1 ? '' : 's'} need${newRequests.length === 1 ? 's' : ''} your approval: ${newRequests.map(request => request.kind === 'resume' ? 'left the app and wants to continue' : 'asks to end focus early').join(', ')}.`);
-            if (soundEnabled) alertSound();
+            if (soundRef.current) alertSound();
           }
           if (newlyBackgrounded.length) {
             setFocusAlert(`${newlyBackgrounded.length} new focus interruption${newlyBackgrounded.length === 1 ? '' : 's'} for review. The reason and destination app are unknown, this is not a misconduct finding, and attendance is unchanged.`);
-            if (soundEnabled) alertSound();
-            if (soundEnabled && 'Notification' in window && Notification.permission === 'granted') {
+            if (soundRef.current) alertSound();
+            if (soundRef.current && 'Notification' in window && Notification.permission === 'granted') {
               try { new Notification('FocusLock · focus event for review', { body: `${newlyBackgrounded.length} new app background event${newlyBackgrounded.length === 1 ? '' : 's'}. Cause unknown; attendance unchanged.`, tag: `focuslock-${session.id}` }); } catch { /* In-page alert remains available. */ }
             }
           }
@@ -279,7 +272,7 @@ function Dashboard({ auth }: { auth: Auth }) {
     void refresh();
     const poll = window.setInterval(refresh, 5000);
     return () => { active = false; window.clearInterval(poll); };
-  }, [session, token, soundEnabled]);
+  }, [session?.id, session?.state, token]);
   async function toggleSound() {
     if (soundEnabled) { setSoundEnabled(false); return; }
     unlockAudio();

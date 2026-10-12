@@ -58,7 +58,7 @@ td,th{border-bottom-color:var(--line)}
 button{background:var(--accent);color:var(--on-accent);transition:transform .18s cubic-bezier(.3,1.5,.5,1),filter .2s,background .25s,box-shadow .25s}
 button:hover:not(:disabled){filter:brightness(1.07);box-shadow:0 6px 18px var(--accent-soft)}
 button:active:not(:disabled){transform:scale(.96)}
-.secondary,.filter-buttons button{background:var(--glass-2);color:var(--accent);border:1px solid var(--edge);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.secondary,.filter-buttons button{background:var(--glass-2);color:var(--accent);border:1px solid var(--edge)}
 .filter-buttons .selected-filter{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
 .course{background:transparent;color:var(--text);border-color:var(--line);transition:transform .2s,background .25s,border-color .25s}
 .course:hover:not(:disabled){transform:translateX(3px)}
@@ -132,9 +132,8 @@ tbody tr{transition:background .2s}tbody tr:hover{background:var(--accent-soft)}
 @keyframes swap{from{opacity:0;transform:translateY(14px) scale(.988)}to{opacity:1;transform:none}}
 @keyframes reveal{from{opacity:0;transform:translateY(36px) scale(.97)}to{opacity:1;transform:none}}
 @keyframes px-back{to{translate:0 -170px}}
-@keyframes head-shrink{to{min-height:58px;box-shadow:0 10px 30px rgba(0,0,0,.2)}}
-@keyframes hero-away{to{translate:0 38px;opacity:.5}}
-.dashboard-shell,.overview-grid,.content-section{animation:swap .5s cubic-bezier(.2,.8,.2,1) both}
+@keyframes head-shrink{to{box-shadow:0 10px 30px rgba(0,0,0,.2)}}
+.overview-grid,.content-section{animation:swap .5s cubic-bezier(.2,.8,.2,1) both}
 .stat,.mini-card,.course,.session-banner{transition:translate .28s cubic-bezier(.2,.8,.2,1),box-shadow .28s,background .25s,border-color .25s}
 .stat:hover,.mini-card:hover{translate:0 -3px;box-shadow:0 16px 36px rgba(0,0,0,.16)}
 .section-tabs button.active{animation:tab-in .35s cubic-bezier(.2,.8,.2,1) both}
@@ -143,10 +142,8 @@ body::after{content:"";position:fixed;inset:-10%;z-index:-1;pointer-events:none;
 .login>div:first-child{translate:calc(var(--mx,0)*-10px) calc(var(--my,0)*-6px);transition:translate .6s cubic-bezier(.2,.8,.2,1)}
 .login .panel{translate:calc(var(--mx,0)*7px) calc(var(--my,0)*5px);transition:translate .6s cubic-bezier(.2,.8,.2,1)}
 @supports (animation-timeline:scroll()){
-  body::before{animation:drift 38s ease-in-out infinite alternate,px-back linear both;animation-timeline:auto,scroll(root)}
+  body::before{animation:drift 38s ease-in-out infinite alternate}
   header{animation:head-shrink linear both;animation-timeline:scroll(root);animation-range:0 140px}
-  .page-heading>div{animation:hero-away linear both;animation-timeline:scroll(root);animation-range:0 320px}
-  .stat,.mini-card,.notification-card,.session-banner,.course-sidebar{animation:reveal linear both;animation-timeline:view();animation-range:entry 0% entry 60%}
 }
 @media(prefers-reduced-motion:reduce){body::after{display:none}*{translate:none!important}}
 
@@ -347,3 +344,7 @@ input[type=date],input[type=time]{border-radius:12px}
 .student-detail{border:2px solid var(--accent);border-radius:16px;padding:18px;margin:12px 0;display:grid;gap:12px;background:var(--glass)}
 
 .reports-view{display:grid;gap:16px}.day-card h4{margin:0 0 8px}
+
+/* Steadier rendering: one animation per element, no layout shifts, cheap compositing */
+html{scrollbar-gutter:stable}
+body::before,body::after{will-change:transform}
