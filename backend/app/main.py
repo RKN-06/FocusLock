@@ -88,7 +88,7 @@ def live():
 def ready(db: Session = Depends(get_db)):
     try:
         revision = db.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        if revision != "0010":
+        if revision != "0012":
             raise ValueError("Schema revision mismatch")
         cfg = settings()
         if cfg.app_env == "production" and (not cfg.oidc_clients_configured or
@@ -164,7 +164,11 @@ def courses(user: User = Depends(current_user), db: Session = Depends(get_db)):
         query = query.where(CourseOffering.teacher_id == user.id)
     else:
         query = query.join(Enrollment).where(Enrollment.student_id == user.id)
-    return [course_view(c) for c in db.scalars(query.order_by(CourseOffering.id))]
+    rows = db.scalars(query.order_by(CourseOffering.id)).all()
+    if user.role != "teacher":
+        return [course_view(c) for c in rows]
+    from .groups import course_detail
+    return [course_detail(db, c) for c in rows]
 
 
 @app.get("/courses/{course_id}/roster")
@@ -277,3 +281,11 @@ from .slots import router as slots_router  # noqa: E402
 app.include_router(slots_router)
 from .course_admin import router as course_admin_router  # noqa: E402
 app.include_router(course_admin_router)
+from .groups import router as groups_router  # noqa: E402
+app.include_router(groups_router)
+from .timetable import router as timetable_router  # noqa: E402
+app.include_router(timetable_router)
+from .analytics import router as analytics_router  # noqa: E402
+app.include_router(analytics_router)
+from .access_codes import router as access_codes_router  # noqa: E402
+app.include_router(access_codes_router)

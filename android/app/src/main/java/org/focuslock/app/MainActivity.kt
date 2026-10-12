@@ -33,6 +33,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Refresh
@@ -138,7 +139,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private val TabRoutes = setOf("today", "history")
+private val TabRoutes = setOf("today", "timetable", "history")
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.isTabSwitch() =
     initialState.destination.route in TabRoutes && targetState.destination.route in TabRoutes
 
@@ -155,7 +156,7 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
     LaunchedEffect(state.student == null, state.authConfig == null) { if (state.student == null && state.authConfig == null) model.loadAuthConfig() }
     LaunchedEffect(callbackUri) { callbackUri?.let { model.completeCollegeSignIn(it); clearCallback() } }
     LaunchedEffect(state.student?.id) {
-        nav.navigate(if (state.student == null) "sign-in" else if (state.student?.role == "student") "today" else "enroll") {
+        nav.navigate(if (state.student == null) "sign-in" else if (state.student?.role == "student") "today" else "portal") {
             popUpTo(nav.graph.id) { inclusive = true }
             launchSingleTop = true
         }
@@ -198,7 +199,7 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
         val showTabs = state.student != null && state.student?.role == "student" && !focusLocked && !resumeLocked
         AnimatedVisibility(showTabs, enter = fadeIn(tween(300)) + androidx.compose.animation.slideInVertically(tween(350)) { it }, exit = fadeOut(tween(150)) + androidx.compose.animation.slideOutVertically(tween(250)) { it }) {
             GlassTabBar(
-                tabs = listOf(TabItem("today", "Today", Icons.Rounded.Home), TabItem("history", "History", Icons.Rounded.DateRange)),
+                tabs = listOf(TabItem("today", "Today", Icons.Rounded.Home), TabItem("timetable", "Timetable", Icons.Rounded.Menu), TabItem("history", "History", Icons.Rounded.DateRange)),
                 selected = entry?.destination?.route,
                 onSelect = { route -> nav.navigate(route) { popUpTo("today"); launchSingleTop = true } })
         }
@@ -338,7 +339,7 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                     val id = backStack.arguments!!.getInt("id")
                     ScanScreen(id, state.loading, id in state.pendingLocal || state.detail?.pendingReview == true, state.error, state.checkInResult,
                         onQr = { model.acceptScannedCheckIn(id, it) }, onDecline = { model.declineScannedCheckIn(id) }, onReview = { model.requestReview(id, it) }, onBack = { nav.popBackStack() },
-                        dndReady = state.dndReady, onSetupDnd = dnd.open)
+                        dndReady = state.dndReady, onSetupDnd = dnd.open, onCode = { model.checkInWithCode(id, it) })
                 }
                 composable("face-check/{id}", arguments = listOf(navArgument("id") { type = NavType.IntType })) { backStack ->
                     val id = backStack.arguments!!.getInt("id")
@@ -347,9 +348,19 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                         onGiveUp = { reason -> nav.popBackStack(); model.faceGaveUp(id, reason) },
                         onCancel = { nav.popBackStack(); model.faceCancelled() })
                 }
+                composable("portal") {
+                    PortalScreen(BuildConfig.DASHBOARD_URL, { model.portalToken() }, { model.signOut() },
+                        extraAction = if (state.student?.role == "teacher") ({ GOutlinedButton(onClick = { nav.navigate("enroll") }) { Text("Record student faces") } }) else null)
+                }
                 composable("enroll") {
                     FaceEnrollScreen(state.faceRoster, state.loading, state.faceMessage, state.error,
                         onRefresh = model::loadFaceRoster, onEnroll = model::enrollFace, onDelete = model::deleteFace)
+                }
+                composable("timetable") {
+                    var weekStart by rememberSaveable { mutableStateOf(currentWeekStart().toString()) }
+                    val week = LocalDate.parse(weekStart)
+                    LaunchedEffect(week, state.student?.id) { if (state.student != null) model.loadTimetable(week) }
+                    TimetableScreen(state.timetable, week, state.loading, { weekStart = it.toString() }, { model.loadTimetable(week) }, { id -> nav.navigate("session/$id") })
                 }
                 composable("history") {
                     var privacyKind by remember { mutableStateOf<String?>(null) }
@@ -405,6 +416,8 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                     var phoneMessage by remember { mutableStateOf("") }
                     var leaveWarning by remember { mutableStateOf(false) }
                     var exitDialog by remember { mutableStateOf(false) }
+                    var exitCodeDialog by remember { mutableStateOf(false) }
+                    var exitCode by remember { mutableStateOf("") }
                     var scanningExit by remember { mutableStateOf(false) }
                     var cameraGranted by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
                     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { cameraGranted = it }
@@ -444,7 +457,13 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                         title = { Text("End focus early?") },
                         text = { Text("Ending focus before the teacher ends the session needs the teacher's current QR code or the teacher's approval. Attendance is unchanged.") },
                         confirmButton = { TextButton(onClick = { exitDialog = false; scanningExit = true }) { Text("Scan teacher's QR") } },
-                        dismissButton = { TextButton(onClick = { exitDialog = false; model.requestFocusExitApproval(id) }) { Text("Ask teacher to approve") } })
+                        dismissButton = { Column { TextButton(onClick = { exitDialog = false; model.requestFocusExitApproval(id) }) { Text("Ask teacher to approve") }
+                            TextButton(onClick = { exitDialog = false; exitCodeDialog = true }) { Text("Enter the exit code") } } })
+                    if (exitCodeDialog) AlertDialog(onDismissRequest = { exitCodeDialog = false },
+                        title = { Text("Exit code") },
+                        text = { GTextField(exitCode, { exitCode = it }, "Code from your teacher", singleLine = true) },
+                        confirmButton = { GTextButton(onClick = { exitCodeDialog = false; model.exitFocusWithCode(id, exitCode); exitCode = "" }, enabled = exitCode.trim().length >= 6) { Text("Leave focus") } },
+                        dismissButton = { GTextButton(onClick = { exitCodeDialog = false }) { Text("Cancel") } })
                     if (scanningExit) AlertDialog(onDismissRequest = { scanningExit = false },
                         title = { Text("Scan the teacher's QR") },
                         text = {
@@ -562,6 +581,7 @@ private fun SessionCard(session: ClassSession, modifier: Modifier = Modifier, op
                 Text(session.course, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 Text(session.title, style = MaterialTheme.typography.titleLarge)
                 Text(time(session.startsAt), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (session.roomCode.isNotBlank() && session.roomCode != "UNASSIGNED") Text("Room ${session.roomCode}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             }
             GlassChip(session.status?.replaceFirstChar { it.uppercase() } ?: "Not recorded",
                 color = if (session.status == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)

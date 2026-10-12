@@ -6,7 +6,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from .auth import admin
 from .db import get_db
-from .models import AdminAudit, CourseOffering, User
+from .groups import course_detail, set_course_groups
+from .models import AdminAudit, CourseOffering, StudentGroup, User
 
 router = APIRouter()
 MAX_COURSES = 50
@@ -25,6 +26,8 @@ class BulkCourses(Strict):
     teacher_id: int = Field(gt=0)
     term: str = Field(min_length=1, max_length=40)
     courses: list[CourseRow] = Field(min_length=1, max_length=MAX_COURSES)
+    # Student groups (for example "CSE - Year 3") attending every course in this request; their members are enrolled automatically.
+    group_ids: list[int] = Field(default_factory=list, max_length=20)
 
 
 def course_view(row: CourseOffering) -> dict:
@@ -49,7 +52,7 @@ def list_teachers(user: User = Depends(admin), db: Session = Depends(get_db)):
 def teacher_courses(teacher_id: int, user: User = Depends(admin), db: Session = Depends(get_db)):
     teacher_or_404(db, teacher_id)
     rows = db.scalars(select(CourseOffering).where(CourseOffering.teacher_id == teacher_id).order_by(CourseOffering.term, CourseOffering.code))
-    return [course_view(row) for row in rows]
+    return [course_detail(db, row) for row in rows]
 
 
 @router.post("/admin/courses/bulk", status_code=201)
@@ -59,6 +62,10 @@ def add_courses(body: BulkCourses, user: User = Depends(admin), db: Session = De
     teacher = teacher_or_404(db, body.teacher_id)
     rate_limit(db, "course-bulk", str(user.id), 10, 3600)
     term = body.term.strip()
+    if body.group_ids:
+        found = set(db.scalars(select(StudentGroup.id).where(StudentGroup.id.in_(set(body.group_ids)))))
+        if found != set(body.group_ids):
+            raise HTTPException(404, "One of the groups was not found")
     have = {row.lower() for row in db.scalars(select(CourseOffering.code).where(CourseOffering.teacher_id == teacher.id, CourseOffering.term == term))}
     created, skipped = [], []
     for item in body.courses:
@@ -73,8 +80,12 @@ def add_courses(body: BulkCourses, user: User = Depends(admin), db: Session = De
             created.append(row)
             have.add(code.lower())
     db.flush()
+    enrolled = 0
+    for row in created:
+        if body.group_ids:
+            enrolled += set_course_groups(db, row, body.group_ids)["added"]
     if created:
         db.add(AdminAudit(actor_id=user.id, action="courses_bulk_created", target_type="teacher", target_id=str(teacher.id),
-                          reason=f"Added {len(created)} courses for {term}"[:500], recorded_at=datetime.now(timezone.utc)))
+                          reason=f"Added {len(created)} courses for {term} for {len(set(body.group_ids))} groups"[:500], recorded_at=datetime.now(timezone.utc)))
     db.commit()
-    return {"created": [course_view(row) for row in created], "skipped": skipped}
+    return {"created": [course_detail(db, row) for row in created], "skipped": skipped, "enrolled": enrolled}

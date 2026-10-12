@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from .auth import teacher
 from .db import get_db
 from .models import (AdminAudit, Attendance, AttendanceEvent, BleCredential, BleSighting, ClassSession, CourseResource,
-                     DataRequest, DeviceChallenge, FocusEvent, FocusExitRequest, PendingAttendance, User)
+                     DataRequest, DeviceChallenge, FocusEvent, FocusExitRequest, PendingAttendance, SessionCode, User)
 
 router = APIRouter()
 RUNNING = ("checkin_pending", "active", "paused")
@@ -24,7 +24,7 @@ def purge_sessions(db: Session, ids: list[int]) -> None:
         return
     credentials = select(BleCredential.id).where(BleCredential.session_id.in_(ids))
     db.execute(delete(BleSighting).where(BleSighting.credential_id.in_(credentials)))
-    for model in (BleCredential, CourseResource, FocusEvent, FocusExitRequest, PendingAttendance, AttendanceEvent, Attendance, DeviceChallenge):
+    for model in (BleCredential, CourseResource, FocusEvent, FocusExitRequest, PendingAttendance, AttendanceEvent, Attendance, DeviceChallenge, SessionCode):
         db.execute(delete(model).where(model.session_id.in_(ids)))
     db.execute(update(DataRequest).where(DataRequest.session_id.in_(ids)).values(session_id=None))
     db.execute(delete(ClassSession).where(ClassSession.id.in_(ids)))

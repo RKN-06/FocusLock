@@ -10,7 +10,9 @@ import org.json.JSONObject
 data class Student(val id: Int, val name: String, val role: String = "student")
 data class FaceStatus(val mode: String, val enrolled: Boolean, val template: FloatArray?)
 data class FaceRosterEntry(val id: Int, val name: String, val email: String, val enrolled: Boolean)
-data class ClassSession(val id: Int, val title: String, val course: String, val startsAt: String, val endsAt: String, val status: String?, val state: String, val pendingReview: Boolean)
+data class ClassSession(val id: Int, val title: String, val course: String, val startsAt: String, val endsAt: String, val status: String?, val state: String, val pendingReview: Boolean, val roomCode: String = "")
+data class TimetableEntry(val id: Int, val courseCode: String, val courseTitle: String, val teacher: String, val title: String, val roomCode: String, val startsAt: String, val endsAt: String,
+                          val period: String?, val state: String, val attendance: String?)
 data class HistoryEntry(val session: ClassSession, val status: String, val updatedAt: String)
 class ApiException(val statusCode: Int, message: String) : Exception(message)
 data class ServerChallenge(val id: String, val nonce: String, val integrityHash: String?)
@@ -78,6 +80,11 @@ class Api {
 
     fun clearToken() { token = null }
     suspend fun sessions(): List<ClassSession> = JSONArray(request("/sessions")).mapObjects(::parseSession)
+    suspend fun timetable(start: String, days: Int): List<TimetableEntry> = JSONObject(request("/timetable?start=$start&days=$days")).getJSONArray("entries").mapObjects {
+        TimetableEntry(it.getInt("id"), it.getString("course_code"), it.getString("course_title"), it.getString("teacher"), it.getString("title"), it.optString("room_code", ""),
+            it.getString("starts_at"), it.getString("ends_at"), it.optString("period").takeIf { period -> period.isNotBlank() && period != "null" }, it.getString("state"),
+            it.optString("attendance").takeIf { status -> status.isNotBlank() && status != "null" })
+    }
     suspend fun session(id: Int): ClassSession = parseSession(JSONObject(request("/sessions/$id")))
     suspend fun history(): List<HistoryEntry> = JSONArray(request("/attendance/me")).mapObjects {
         HistoryEntry(parseSession(it.getJSONObject("session")), it.getString("status"), it.getString("updated_at"))
@@ -112,6 +119,12 @@ class Api {
     }
     suspend fun focusEvent(sessionId: Int, id: String, policy: String, action: String) {
         request("/sessions/$sessionId/focus-events", "POST", JSONObject().put("id", id).put("policy", policy).put("action", action))
+    }
+    suspend fun checkInWithCode(sessionId: Int, code: String): CheckInResult = JSONObject(request("/sessions/$sessionId/check-in/code", "POST", JSONObject().put("code", code))).let {
+        CheckInResult(it.getString("status"), it.getString("method"), it.getBoolean("duplicate"))
+    }
+    suspend fun focusExitWithCode(sessionId: Int, code: String) {
+        request("/sessions/$sessionId/focus-exit/code", "POST", JSONObject().put("code", code))
     }
     suspend fun focusExitWithQr(sessionId: Int, qr: String) {
         request("/sessions/$sessionId/focus-exit/qr", "POST", JSONObject().put("qr", qr))
@@ -150,7 +163,7 @@ class Api {
 
     private fun parseSession(json: JSONObject) = ClassSession(
         json.getInt("id"), json.getString("title"), json.getString("course_title"),
-        json.getString("starts_at"), json.getString("ends_at"), json.optJSONObject("attendance")?.getString("status"), json.getString("state"), json.optBoolean("pending_review")
+        json.getString("starts_at"), json.getString("ends_at"), json.optJSONObject("attendance")?.getString("status"), json.getString("state"), json.optBoolean("pending_review"), json.optString("room_code", "")
     )
 
     private fun <T> JSONArray.mapObjects(transform: (JSONObject) -> T): List<T> = (0 until length()).map { transform(getJSONObject(it)) }

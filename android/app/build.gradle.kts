@@ -32,6 +32,8 @@ android {
             val apiUrl = providers.gradleProperty("API_BASE_URL").getOrElse("http://10.0.2.2:8000")
             require(apiUrl.matches(Regex("https?://[a-zA-Z0-9.:-]+(/[a-zA-Z0-9._-]+)*"))) { "API_BASE_URL must be an HTTP(S) origin with an optional path (such as /api) and no trailing slash" }
             buildConfigField("String", "API_BASE_URL", "\"$apiUrl\"")
+            val dashboard = providers.gradleProperty("DASHBOARD_URL").getOrElse(if (apiUrl.endsWith("/api")) apiUrl.removeSuffix("/api") else "http://10.0.2.2:5173")
+            buildConfigField("String", "DASHBOARD_URL", "\"$dashboard\"")
             val resourceHosts = providers.gradleProperty("RESOURCE_ALLOWED_HOSTS").getOrElse("college.example.edu,docs.college.example.edu,www.w3.org")
             buildConfigField("String", "RESOURCE_ALLOWED_HOSTS", "\"$resourceHosts\"")
         }
@@ -41,6 +43,7 @@ android {
             val releaseApi = providers.gradleProperty("RELEASE_API_BASE_URL").getOrElse("https://api.focuslock.invalid")
             require(releaseApi.matches(Regex("https://[a-zA-Z0-9.:-]+(/[a-zA-Z0-9._-]+)*"))) { "Release API must be an HTTPS origin with an optional path (such as /api) and no trailing slash" }
             buildConfigField("String", "API_BASE_URL", "\"$releaseApi\"")
+            buildConfigField("String", "DASHBOARD_URL", "\"${providers.gradleProperty("DASHBOARD_URL").getOrElse(releaseApi.removeSuffix("/api"))}\"")
             buildConfigField("String", "RESOURCE_ALLOWED_HOSTS", "\"college.example.edu\"")
             isMinifyEnabled = false
         }

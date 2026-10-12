@@ -28,6 +28,8 @@ class Enrollment(Base):
     __tablename__ = "enrollments"
     course_id: Mapped[int] = mapped_column(ForeignKey("course_offerings.id"), primary_key=True)
     student_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    # "group" rows follow group membership automatically; "manual" rows are never removed by group changes.
+    source: Mapped[str] = mapped_column(String(8), default="manual", server_default="manual")
 
 
 class ClassSession(Base):
@@ -54,7 +56,7 @@ class Attendance(Base):
         ForeignKeyConstraint(["session_id", "course_id"], ["sessions.id", "sessions.course_id"]),
         ForeignKeyConstraint(["course_id", "student_id"], ["enrollments.course_id", "enrollments.student_id"]),
         CheckConstraint("status IN ('present', 'absent', 'excused')", name="attendance_status"),
-        CheckConstraint("method IN ('teacher_confirmed', 'qr')", name="attendance_method"),
+        CheckConstraint("method IN ('teacher_confirmed', 'qr', 'code')", name="attendance_method"),
     )
     session_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     student_id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -259,3 +261,33 @@ class TimeSlot(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class StudentGroup(Base):
+    """A cohort such as "CSE - Year 3 - A". Courses are linked to groups, and members are enrolled automatically."""
+    __tablename__ = "student_groups"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class GroupMember(Base):
+    __tablename__ = "group_members"
+    group_id: Mapped[int] = mapped_column(ForeignKey("student_groups.id"), primary_key=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+
+
+class CourseGroup(Base):
+    __tablename__ = "course_groups"
+    course_id: Mapped[int] = mapped_column(ForeignKey("course_offerings.id"), primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("student_groups.id"), primary_key=True)
+
+
+class SessionCode(Base):
+    """Backup codes a teacher sets for a session: one to enter (check in) and one to exit focus. Stored only as keyed digests."""
+    __tablename__ = "session_codes"
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id"), primary_key=True)
+    enter_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    exit_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

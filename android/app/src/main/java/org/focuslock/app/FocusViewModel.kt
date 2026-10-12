@@ -17,6 +17,7 @@ data class UiState(
     val student: Student? = null,
     val sessions: List<ClassSession> = emptyList(),
     val history: List<HistoryEntry> = emptyList(),
+    val timetable: List<TimetableEntry> = emptyList(),
     val privacyRequests: List<PrivacyRequest> = emptyList(),
     val detail: ClassSession? = null,
     val pendingLocal: Set<Int> = emptySet(),
@@ -165,6 +166,7 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                 .onFailure { if (!(it is ApiException && it.statusCode == 409)) mutable.value = mutable.value.copy(error = "Quiet mode could not start: ${it.message}") }
         }
     }
+    fun loadTimetable(start: java.time.LocalDate) = run { mutable.value = mutable.value.copy(timetable = api.timetable(start.toString(), 7)) }
     fun loadHistory() = run { mutable.value = mutable.value.copy(history = api.history(), privacyRequests = api.privacyRequests()) }
     fun submitPrivacyRequest(kind: String, sessionId: Int?, reason: String) = run {
         api.submitPrivacyRequest(kind, sessionId, reason)
@@ -374,6 +376,15 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
     private fun exitFocus(id: Int) {
         endLocalSession(id)
         emitFocus(id, "exited")
+    }
+    fun portalToken(): String? = api.token
+    fun checkInWithCode(id: Int, code: String) = run {
+        val result = api.checkInWithCode(id, code.trim())
+        mutable.value = mutable.value.copy(checkInResult = if (result.duplicate) "Attendance was already recorded: ${result.status}." else "Checked in with the class code: ${result.status}.", detail = api.session(id))
+    }
+    fun exitFocusWithCode(id: Int, code: String) = run {
+        api.focusExitWithCode(id, code.trim())
+        exitFocus(id)
     }
     fun exitFocusWithQr(id: Int, qr: String) = run {
         api.focusExitWithQr(id, qr)

@@ -77,7 +77,7 @@ fun QrScanner(onQr: (String) -> Unit, onError: (String) -> Unit, modifier: Modif
 
 @Composable
 fun ScanScreen(sessionId: Int, loading: Boolean, pending: Boolean, error: String?, result: String?, onQr: (String) -> Unit, onDecline: () -> Unit, onReview: (String) -> Unit, onBack: () -> Unit,
-               dndReady: Boolean = true, onSetupDnd: () -> Unit = {}) {
+               dndReady: Boolean = true, onSetupDnd: () -> Unit = {}, onCode: (String) -> Unit = {}) {
     val context = LocalContext.current
     var granted by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
@@ -106,6 +106,13 @@ fun ScanScreen(sessionId: Int, loading: Boolean, pending: Boolean, error: String
         if (result != null) Text(result, color = MaterialTheme.colorScheme.primary)
         if (error != null) { Text(error, color = MaterialTheme.colorScheme.error); if (scanned) GTextButton(onClick = { scanned = false }) { Text("Scan again") } }
         if (pending) AlertCard("Pending teacher review", "Nothing is counted yet.")
+        var classCode by remember(sessionId) { mutableStateOf("") }
+        GlassCard {
+            Text("No QR? Use the class code", style = MaterialTheme.typography.titleMedium)
+            Text("Only if your teacher gave you one.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            GTextField(classCode, { classCode = it }, "Class code", singleLine = true)
+            GOutlinedButton(onClick = { onCode(classCode) }, enabled = !loading && classCode.trim().length >= 6, modifier = Modifier.fillMaxWidth()) { Text("Check in with code") }
+        }
         GTextField(reason, { reason = it }, "Reason for teacher review")
         GOutlinedButton(onClick = { onReview(reason) }, enabled = !loading && reason.trim().length >= 10, modifier = Modifier.fillMaxWidth()) { Text("Request teacher review") }
     }
