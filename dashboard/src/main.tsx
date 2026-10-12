@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import QRCode from 'qrcode';
 import './styles.css';
-import { AdminSlots, ScheduleSessions } from './scheduling';
+import { AdminConsole, ScheduleSessions } from './scheduling';
 
 try {
   const savedTheme = localStorage.getItem('focuslock-theme');
@@ -152,7 +152,7 @@ function App() {
     {enabled && <div className="dev-banner">Demo · sample data only</div>}
     {!auth ? <main className="login"><div><p className="eyebrow">Smart classroom management</p><h1>Smarter classrooms<br/>start here.</h1><p>Attendance, focus sessions and course resources, managed from a single workspace.</p></div>
       <div className="panel"><h2>Teacher sign-in</h2>{enabled ? <form onSubmit={signIn}><label>Email<input type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)}/></label><label>Password<input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)}/></label><button disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button></form> : <><p>Use your college account.</p><button disabled={!college?.college_oidc || !college.authorization_endpoint || busy} onClick={() => void collegeSignIn()}>Sign in with college</button>{!college?.college_oidc && <p role="status">College sign-in isn't set up yet.</p>}</>}{error && <p className="error" role="alert">{error}</p>}</div></main>
-      : auth.user.role === 'admin' ? <AdminSlots request={<T,>(path: string, options?: RequestInit) => api<T>(path, auth.access_token, options)}/> : <Dashboard auth={auth}/>}
+      : auth.user.role === 'admin' ? <AdminConsole request={<T,>(path: string, options?: RequestInit) => api<T>(path, auth.access_token, options)}/> : <Dashboard auth={auth}/>}
     <footer>A QR check-in is evidence of participation, not proof of physical presence.</footer></>;
 }
 

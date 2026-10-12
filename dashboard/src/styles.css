@@ -231,3 +231,19 @@ button.chip{cursor:pointer}button.chip.on{background:var(--accent);color:var(--o
 .slot-card .slot-time{font-size:22px;font-weight:700;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
 .slot-card .actions{flex-wrap:wrap;align-items:center}.slot-form{margin:18px 0;border-radius:16px}
 @media(max-width:760px){.date-step{grid-template-columns:1fr}.slot-grid{grid-template-columns:repeat(2,1fr)}.schedule-step{padding:12px}}
+
+/* Administration console */
+.admin-tabs{padding:0;margin-bottom:6px}.admin-panel{margin-top:6px}
+.admin-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin:16px 0 14px}.admin-head h2{margin:0 0 4px}.admin-head p{margin:0;max-width:640px}
+.admin-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(260px,1fr);gap:22px;align-items:start}
+textarea{display:block;width:100%;margin-top:8px;border:1px solid var(--edge);border-radius:10px;padding:11px;background:var(--field);color:var(--text);font:inherit;resize:vertical}
+textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);outline:none}
+label small{font-weight:400;color:var(--muted)}
+.parse-list{display:grid;gap:6px;margin:12px 0}
+.parse-row{display:grid;grid-template-columns:110px 1fr auto;gap:12px;align-items:center;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--glass-2);font-size:13px}
+.parse-row.bad{border-color:var(--bad);background:var(--bad-bg)}.parse-code{font-weight:700}.parse-title{overflow-wrap:anywhere}
+.parse-state{font-size:12px;color:var(--ok);font-weight:600}.parse-row.bad .parse-state{color:var(--bad)}
+.teacher-courses{background:var(--glass);border:1px solid var(--edge);border-top:4px solid var(--accent);border-radius:16px;padding:16px;box-shadow:var(--shadow)}
+.teacher-courses h3{margin:0 0 10px}.teacher-courses h3 small{background:var(--accent-soft);color:var(--accent);border-radius:99px;padding:2px 9px;font-size:12px;margin-left:6px}
+.course-line{display:grid;grid-template-columns:90px 1fr;gap:2px 10px;padding:9px 0;border-top:1px solid var(--line)}.course-line small{grid-column:2}.course-line strong{color:var(--accent)}
+@media(max-width:900px){.admin-grid{grid-template-columns:1fr}.parse-row{grid-template-columns:80px 1fr}.parse-state{grid-column:1 / -1}.admin-head{flex-direction:column}}

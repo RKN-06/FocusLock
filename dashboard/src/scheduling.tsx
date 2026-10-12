@@ -162,9 +162,8 @@ export function AdminSlots({ request }: { request: Request }) {
     try { await request(`/admin/slots/${slot.id}`, { method: 'DELETE' }); setNotice('Slot deleted. Sessions already scheduled keep their times.'); setConfirmDelete(null); await load(); }
     catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
-  return <main className="dashboard-shell">
-    <div className="page-heading"><div><p className="eyebrow">Administration</p><h1>Class time slots</h1></div><button onClick={() => { setForm({ id: null, label: '', starts: '09:00', ends: '09:50', active: true }); setError(''); setNotice(''); }} disabled={busy}>+ Add a slot</button></div>
-    <p className="note">Only administrators can change these. Teachers choose from the visible slots when they schedule sessions. {data && <>Times are in {data.timezone}.</>}</p>
+  return <section className="admin-panel">
+    <div className="admin-head"><div><h2>Class time slots</h2><p>Only administrators can change these. Teachers choose from the visible slots when they schedule sessions. {data && <>Times are in {data.timezone}.</>}</p></div><button onClick={() => { setForm({ id: null, label: '', starts: '09:00', ends: '09:50', active: true }); setError(''); setNotice(''); }} disabled={busy}>+ Add a slot</button></div>
     {error && <p className="error" role="alert">{error}</p>}
     {notice && <p className="success" role="status">{notice}</p>}
     {form && <form className="create-session slot-form" onSubmit={save}>
@@ -188,5 +187,109 @@ export function AdminSlots({ request }: { request: Request }) {
           <button className="secondary danger" disabled={busy} onClick={() => setConfirmDelete(slot.id)}>Delete</button></div>}
     </div>)}</div>
     {data && !data.slots.length && <p className="empty-inline">No slots yet. Add the first one.</p>}
+  </section>;
+}
+
+type Teacher = { id: number; name: string; email: string; courses: number };
+type CourseOut = { id: number; code: string; title: string; term: string; teacher_id: number };
+type CourseLine = { code: string; title: string; problems: string[] };
+
+/** One course per line: "CODE, Title" or two spreadsheet columns pasted with a tab. */
+function parseCourses(text: string): CourseLine[] {
+  const seen = new Set<string>();
+  return text.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => {
+    const tab = line.indexOf('\t');
+    const cut = tab >= 0 ? tab : line.indexOf(',');
+    const code = (cut >= 0 ? line.slice(0, cut) : line).trim();
+    const title = cut >= 0 ? line.slice(cut + 1).trim() : '';
+    const problems: string[] = [];
+    if (!code) problems.push('Missing code'); else if (code.length > 32) problems.push('Code is over 32 characters');
+    if (!title) problems.push('Missing title'); else if (title.length > 150) problems.push('Title is over 150 characters');
+    if (code && seen.has(code.toLowerCase())) problems.push('Repeated in this list');
+    if (code) seen.add(code.toLowerCase());
+    return { code, title, problems };
+  });
+}
+
+/** Administrators give a teacher many courses in one go. */
+export function AdminCourses({ request }: { request: Request }) {
+  const [teachers, setTeachers] = useState<Teacher[] | null>(null);
+  const [teacherId, setTeacherId] = useState<number | null>(null);
+  const [courses, setCourses] = useState<CourseOut[]>([]);
+  const [term, setTerm] = useState('');
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [skipped, setSkipped] = useState<{ code: string; reason: string }[]>([]);
+  const lines = parseCourses(text);
+  const bad = lines.some(line => line.problems.length > 0);
+  const teacher = teachers?.find(row => row.id === teacherId) ?? null;
+  async function loadTeachers(keep?: number | null) {
+    try {
+      const rows = await request<Teacher[]>('/admin/teachers');
+      setTeachers(rows);
+      setTeacherId(current => keep ?? current ?? rows[0]?.id ?? null);
+    } catch (e) { setError((e as Error).message); }
+  }
+  useEffect(() => { void loadTeachers(); }, []);
+  useEffect(() => {
+    if (teacherId === null) { setCourses([]); return; }
+    let active = true;
+    request<CourseOut[]>(`/admin/teachers/${teacherId}/courses`).then(rows => { if (active) setCourses(rows); }).catch(e => { if (active) setError((e as Error).message); });
+    return () => { active = false; };
+  }, [teacherId]);
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (teacherId === null || !lines.length || bad) return;
+    setBusy(true); setError(''); setNotice(''); setSkipped([]);
+    try {
+      const result = await request<{ created: CourseOut[]; skipped: { code: string; reason: string }[] }>('/admin/courses/bulk', { method: 'POST',
+        body: JSON.stringify({ teacher_id: teacherId, term: term.trim(), courses: lines.map(line => ({ code: line.code, title: line.title })) }) });
+      setSkipped(result.skipped);
+      setNotice(`${result.created.length} course${result.created.length === 1 ? '' : 's'} added to ${teacher?.name ?? 'the teacher'}${result.skipped.length ? `, ${result.skipped.length} skipped` : ''}.`);
+      if (result.created.length) setText('');
+      await loadTeachers(teacherId);
+      setCourses(await request<CourseOut[]>(`/admin/teachers/${teacherId}/courses`));
+    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+  return <section className="admin-panel">
+    <div className="admin-head"><div><h2>Courses for a teacher</h2><p>Choose a teacher, then paste or type all their courses at once, one per line.</p></div></div>
+    {error && <p className="error" role="alert">{error}</p>}
+    {notice && <p className="success" role="status">{notice}</p>}
+    {!teachers && !error && <p role="status">Loading teachers…</p>}
+    {teachers && !teachers.length && <p className="empty-inline">There are no teacher accounts yet.</p>}
+    {teachers && teachers.length > 0 && <div className="admin-grid">
+      <form className="create-session" onSubmit={submit}>
+        <div className="form-grid">
+          <label>Teacher<select value={teacherId ?? ''} onChange={e => { setTeacherId(Number(e.target.value)); setSkipped([]); setNotice(''); }}>{teachers.map(row => <option key={row.id} value={row.id}>{row.name} · {row.courses} course{row.courses === 1 ? '' : 's'}</option>)}</select></label>
+          <label>Term<input required maxLength={40} value={term} onChange={e => setTerm(e.target.value)} placeholder="Autumn 2026"/></label>
+        </div>
+        <label>Courses <small>(CODE, Title — one per line; a pasted spreadsheet works too)</small>
+          <textarea rows={7} value={text} onChange={e => setText(e.target.value)} placeholder={'CS201, Data Structures\nCS202, Algorithms\nMA110, Linear Algebra'} spellCheck={false}/></label>
+        {lines.length > 0 && <div className="parse-list" aria-label="Preview">{lines.map((line, index) => <div key={index} className={`parse-row ${line.problems.length ? 'bad' : ''}`}>
+          <span className="parse-code">{line.code || '—'}</span><span className="parse-title">{line.title || '—'}</span><span className="parse-state">{line.problems.length ? line.problems.join(', ') : 'Ready'}</span></div>)}</div>}
+        {skipped.length > 0 && <div className="inline-hint" role="status"><strong>Skipped</strong><ul>{skipped.map(item => <li key={item.code}>{item.code}: {item.reason}</li>)}</ul></div>}
+        <div className="actions"><button disabled={busy || !lines.length || bad || !term.trim() || teacherId === null}>{busy ? 'Adding…' : lines.length ? `Add ${lines.length} course${lines.length === 1 ? '' : 's'}${teacher ? ` to ${teacher.name}` : ''}` : 'Add courses'}</button>
+          <button type="button" className="secondary" disabled={!text} onClick={() => setText('')}>Clear</button></div>
+      </form>
+      <aside className="teacher-courses"><h3>{teacher?.name ?? 'Teacher'}'s courses <small>{courses.length}</small></h3>
+        {!courses.length && <p className="empty-inline">No courses yet.</p>}
+        {courses.map(course => <div key={course.id} className="course-line"><strong>{course.code}</strong><span>{course.title}</span><small>{course.term}</small></div>)}
+      </aside>
+    </div>}
+  </section>;
+}
+
+/** The administrator's home: time slots and teacher courses. */
+export function AdminConsole({ request }: { request: Request }) {
+  const [tab, setTab] = useState<'slots' | 'courses'>('slots');
+  return <main className="dashboard-shell">
+    <div className="page-heading"><div><p className="eyebrow">Administration</p><h1>Campus setup</h1></div></div>
+    <nav className="section-tabs admin-tabs" aria-label="Administration sections">
+      <button type="button" className={tab === 'slots' ? 'active' : ''} aria-current={tab === 'slots' ? 'page' : undefined} onClick={() => setTab('slots')}>Time slots</button>
+      <button type="button" className={tab === 'courses' ? 'active' : ''} aria-current={tab === 'courses' ? 'page' : undefined} onClick={() => setTab('courses')}>Courses</button>
+    </nav>
+    {tab === 'slots' ? <AdminSlots request={request}/> : <AdminCourses request={request}/>}
   </main>;
 }

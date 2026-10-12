@@ -275,3 +275,5 @@ from .session_admin import router as session_admin_router  # noqa: E402
 app.include_router(session_admin_router)
 from .slots import router as slots_router  # noqa: E402
 app.include_router(slots_router)
+from .course_admin import router as course_admin_router  # noqa: E402
+app.include_router(course_admin_router)
