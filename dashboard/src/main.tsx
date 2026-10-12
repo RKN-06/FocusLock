@@ -5,6 +5,7 @@ import './styles.css';
 import { AdminConsole } from './admin';
 import { ScheduleSessions } from './scheduling';
 import { ClassesView } from './classes';
+import { TeacherReports } from './reports';
 import { AlertBanner, PopOutAlerts, androidBridge, armNotifications, notifyOs } from './alerts';
 import type { AlertItem } from './alerts';
 import { BackupCodes } from './codes';
@@ -169,7 +170,7 @@ function App() {
 function Dashboard({ auth }: { auth: Auth }) {
   const [courses, setCourses] = useState<Course[]>([]);
   const [course, setCourse] = useState<Course | null>(null);
-  const [view, setView] = useState<'classes' | 'sessions'>('classes');
+  const [view, setView] = useState<'classes' | 'sessions' | 'reports'>('classes');
   const [roster, setRoster] = useState<User[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [dayFilter, setDayFilter] = useState('');
@@ -444,8 +445,9 @@ function Dashboard({ auth }: { auth: Auth }) {
     <nav className="view-tabs" aria-label="Teacher workspace">
       <button type="button" className={view === 'classes' ? 'active' : ''} aria-current={view === 'classes' ? 'page' : undefined} onClick={() => setView('classes')}>Classes <small>{courses.length}</small></button>
       <button type="button" className={view === 'sessions' ? 'active' : ''} aria-current={view === 'sessions' ? 'page' : undefined} onClick={() => setView('sessions')}>Sessions <small>{sessions.length}</small></button>
+      <button type="button" className={view === 'reports' ? 'active' : ''} aria-current={view === 'reports' ? 'page' : undefined} onClick={() => setView('reports')}>Reports</button>
     </nav>
-    {view === 'classes' ? <ClassesView courses={courses} selectedId={course?.id ?? null} loading={loading} onSelect={setCourse} onOpenSessions={() => setView('sessions')} request={<T,>(path: string, options?: RequestInit) => api<T>(path, token, options)}/> : <div className="workspace single">
+    {view === 'reports' ? <TeacherReports request={<T,>(path: string, options?: RequestInit) => api<T>(path, token, options)}/> : view === 'classes' ? <ClassesView courses={courses} selectedId={course?.id ?? null} loading={loading} onSelect={setCourse} onOpenSessions={() => setView('sessions')} request={<T,>(path: string, options?: RequestInit) => api<T>(path, token, options)}/> : <div className="workspace single">
       <section className="panel workspace-panel">
         <div className="course-header"><div>{courses.length > 1 && <label className="course-picker">Class<select value={course?.id ?? ''} disabled={saving !== null} onChange={e => setCourse(courses.find(row => row.id === Number(e.target.value)) ?? null)}>{courses.map(row => <option key={row.id} value={row.id}>{row.code} · {row.title}</option>)}</select></label>}<p className="eyebrow">{course?.code ?? 'Course'}</p><h2>{course?.title ?? 'Your course workspace'}</h2><p>{course?.term ?? 'Choose a course to begin'}</p>{course && <div className="course-for">{course.groups && course.groups.length > 0 ? <>{course.groups.map(group => <span key={group.id} className="chip">{group.name}</span>)}<span className="muted-note">{course.students ?? 0} student{course.students === 1 ? '' : 's'}</span></> : <span className="muted-note">No student group linked yet. Ask an administrator to link one.</span>}</div>}</div>{course && <div className="header-actions"><button className="secondary" onClick={() => { setCreateOpen(open => !open); setDeleteTarget(null); setError(''); }} disabled={saving !== null}>{createOpen ? 'Close form' : '+ Schedule sessions'}</button>{sessions.length > 0 && <button className="secondary danger" onClick={() => askDelete('all')} disabled={saving !== null}>Delete all sessions</button>}</div>}</div>
         {loading ? <p role="status">Loading course…</p> : <>

@@ -13,6 +13,10 @@ data class FaceRosterEntry(val id: Int, val name: String, val email: String, val
 data class ClassSession(val id: Int, val title: String, val course: String, val startsAt: String, val endsAt: String, val status: String?, val state: String, val pendingReview: Boolean, val roomCode: String = "")
 data class TimetableEntry(val id: Int, val courseCode: String, val courseTitle: String, val teacher: String, val title: String, val roomCode: String, val startsAt: String, val endsAt: String,
                           val period: String?, val state: String, val attendance: String?)
+data class CourseDay(val sessionId: Int, val title: String, val date: String, val startsAt: String, val roomCode: String, val status: String?)
+data class CourseSummary(val courseId: Int, val code: String, val title: String, val teacher: String, val held: Int, val present: Int, val absent: Int, val excused: Int,
+                         val notRecorded: Int, val rate: Double?, val quitFocus: Int, val breaks: Int, val days: List<CourseDay>)
+data class TermSummary(val term: String, val courses: List<CourseSummary>)
 data class HistoryEntry(val session: ClassSession, val status: String, val updatedAt: String)
 class ApiException(val statusCode: Int, message: String) : Exception(message)
 data class ServerChallenge(val id: String, val nonce: String, val integrityHash: String?)
@@ -88,6 +92,16 @@ class Api {
     suspend fun session(id: Int): ClassSession = parseSession(JSONObject(request("/sessions/$id")))
     suspend fun history(): List<HistoryEntry> = JSONArray(request("/attendance/me")).mapObjects {
         HistoryEntry(parseSession(it.getJSONObject("session")), it.getString("status"), it.getString("updated_at"))
+    }
+    suspend fun attendanceSummary(): List<TermSummary> = JSONObject(request("/attendance/me/summary")).getJSONArray("terms").mapObjects { term ->
+        TermSummary(term.getString("term"), term.getJSONArray("courses").mapObjects { c ->
+            CourseSummary(c.getInt("course_id"), c.getString("code"), c.getString("title"), c.getString("teacher"), c.getInt("held"), c.getInt("present"), c.getInt("absent"),
+                c.getInt("excused"), c.getInt("not_recorded"), if (c.isNull("rate")) null else c.getDouble("rate"), c.getInt("quit_focus"), c.getInt("breaks"),
+                c.getJSONArray("days").mapObjects { d ->
+                    CourseDay(d.getInt("session_id"), d.getString("title"), d.getString("date"), d.getString("starts_at"), d.optString("room_code", ""),
+                        if (d.isNull("status")) null else d.getString("status"))
+                })
+        })
     }
     suspend fun privacyRequests(): List<PrivacyRequest> = JSONArray(request("/privacy/requests")).mapObjects {
         PrivacyRequest(it.getInt("id"), it.getString("kind"), it.getString("status"), it.optString("resolution").takeIf { value -> value.isNotBlank() && value != "null" })

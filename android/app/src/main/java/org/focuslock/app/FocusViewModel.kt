@@ -17,6 +17,7 @@ data class UiState(
     val student: Student? = null,
     val sessions: List<ClassSession> = emptyList(),
     val history: List<HistoryEntry> = emptyList(),
+    val terms: List<TermSummary> = emptyList(),
     val timetable: List<TimetableEntry> = emptyList(),
     val privacyRequests: List<PrivacyRequest> = emptyList(),
     val detail: ClassSession? = null,
@@ -167,7 +168,7 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     fun loadTimetable(start: java.time.LocalDate) = run { mutable.value = mutable.value.copy(timetable = api.timetable(start.toString(), 7)) }
-    fun loadHistory() = run { mutable.value = mutable.value.copy(history = api.history(), privacyRequests = api.privacyRequests()) }
+    fun loadHistory() = run { mutable.value = mutable.value.copy(history = api.history(), terms = runCatching { api.attendanceSummary() }.getOrDefault(mutable.value.terms), privacyRequests = api.privacyRequests()) }
     fun submitPrivacyRequest(kind: String, sessionId: Int?, reason: String) = run {
         api.submitPrivacyRequest(kind, sessionId, reason)
         mutable.value = mutable.value.copy(privacyRequests = api.privacyRequests())

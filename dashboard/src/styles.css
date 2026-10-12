@@ -345,3 +345,5 @@ input[type=date],input[type=time]{border-radius:12px}
 .link-button{background:transparent;color:var(--accent);padding:0;font-weight:700;text-align:left;box-shadow:none;text-decoration:underline}
 .link-button:hover:not(:disabled){background:transparent;filter:none;box-shadow:none}
 .student-detail{border:2px solid var(--accent);border-radius:16px;padding:18px;margin:12px 0;display:grid;gap:12px;background:var(--glass)}
+
+.reports-view{display:grid;gap:16px}.day-card h4{margin:0 0 8px}

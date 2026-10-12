@@ -289,3 +289,5 @@ from .analytics import router as analytics_router  # noqa: E402
 app.include_router(analytics_router)
 from .access_codes import router as access_codes_router  # noqa: E402
 app.include_router(access_codes_router)
+from .reports import router as reports_router
+app.include_router(reports_router)

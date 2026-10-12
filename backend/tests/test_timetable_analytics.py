@@ -115,3 +115,21 @@ def test_student_analytics_weekly_monthly_and_overall(client):
     assert client.get("/courses/1/students/5/analytics", headers=teacher).status_code == 404  # not in this course
     assert client.get("/courses/1/students/4/analytics", headers=login(client, "teacher2@focuslock.test")).status_code in (403, 404)
     assert client.get("/courses/1/students/4/analytics", headers=login(client)).status_code == 403
+
+
+def test_term_reports_for_student_and_teacher(client):
+    teacher = login(client, "teacher@focuslock.test")
+    add_course_history(client)
+    mine = client.get("/attendance/me/summary", headers=login(client)).json()
+    course = next(c for t in mine["terms"] for c in t["courses"] if c["course_id"] == 1)
+    assert course["present"] >= 4 and course["held"] >= 4 and course["rate"] == round(100 * course["present"] / course["held"], 1)
+    assert all(day["date"] for day in course["days"]) and course["days"][0]["status"] in (None, "present", "absent", "excused")
+    assert client.get("/attendance/me/summary", headers=teacher).status_code == 403
+    report = client.get("/reports/teacher", headers=teacher).json()
+    assert report["term"] in report["terms"] and report["courses"]
+    first = next(c for c in report["courses"] if c["id"] == 1)
+    assert first["held"] >= 4 and first["absent"] >= 3
+    day = next(row for row in report["daily"] if row["course_id"] == 1 and row["absent"] >= 1)
+    assert day["present"] + day["absent"] + day["excused"] == day["expected"]
+    assert client.get("/reports/teacher?term=nonexistent", headers=teacher).json()["term"] == report["term"]
+    assert client.get("/reports/teacher", headers=login(client)).status_code == 403

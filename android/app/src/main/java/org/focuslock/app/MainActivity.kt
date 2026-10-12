@@ -376,6 +376,8 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                             privacyKind = null; privacyReason = ""
                         }, enabled = privacyReason.trim().length >= 10) { Text("Send request") } },
                         dismissButton = { TextButton(onClick = { privacyKind = null }) { Text("Cancel") } })
+                    var termChoice by rememberSaveable { mutableStateOf<String?>(null) }
+                    var courseChoice by rememberSaveable { mutableStateOf<Int?>(null) }
                     var shownMonth by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
                     var pickedDay by rememberSaveable { mutableStateOf<String?>(null) }
                     val month = YearMonth.parse(shownMonth)
@@ -390,6 +392,9 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                             Text("History", style = MaterialTheme.typography.headlineLarge)
                             GlassIconButton(model::loadHistory, "Refresh") { Icon(Icons.Rounded.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
                         } }
+                        courseAttendance(state.terms, termChoice, courseChoice, { termChoice = it }, { courseChoice = it; pickedDay = null }, month, picked,
+                            { shownMonth = it.toString(); pickedDay = null }, { pickedDay = it?.toString() }, { id -> privacyKind = "correction"; privacySession = id })
+                        if (courseChoice == null) {
                         if (!state.loading && state.history.isEmpty()) item { Text("No records yet", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 12.dp)) }
                         item { MonthCalendar(month, marks, picked, { pickedDay = it?.toString() }, { shownMonth = it.toString(); pickedDay = null }, Modifier.appear(1)) }
                         item { SectionLabel(picked?.format(DateTimeFormatter.ofPattern("EEE, d MMM yyyy")) ?: month.format(DateTimeFormatter.ofPattern("MMMM yyyy")),
@@ -400,6 +405,7 @@ fun FocusLock(callbackUri: Uri? = null, clearCallback: () -> Unit = {}, model: F
                                 SessionCard(record.session.copy(status = record.status)) { nav.navigate("session/${record.session.id}") }
                                 GTextButton(onClick = { privacyKind = "correction"; privacySession = record.session.id }) { Text("Request correction") }
                             }
+                        }
                         }
                         item { GOutlinedButton(onClick = { privacyKind = "deletion"; privacySession = null }) { Text("Request data deletion") } }
                         items(state.privacyRequests, key = { "request-${it.id}" }) { request ->
