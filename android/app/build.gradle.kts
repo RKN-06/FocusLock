@@ -15,6 +15,13 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+        // Optional side-by-side copy, for example: -PAPP_ID_SUFFIX=_1 "-PAPP_LABEL=FocusLock _1". Normal builds are unchanged.
+        val idSuffix = providers.gradleProperty("APP_ID_SUFFIX").getOrElse("")
+        require(idSuffix.matches(Regex("([._][A-Za-z0-9_]+)?"))) { "APP_ID_SUFFIX must look like _1 or .beta" }
+        applicationIdSuffix = idSuffix
+        val label = providers.gradleProperty("APP_LABEL").getOrElse("FocusLock")
+        require(label.matches(Regex("[A-Za-z0-9 ._-]{1,30}"))) { "APP_LABEL may only contain letters, digits, spaces, dots, dashes and underscores" }
+        manifestPlaceholders["appLabel"] = label
     }
     buildTypes {
         debug {
