@@ -30,6 +30,8 @@ class Enrollment(Base):
     student_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
     # "group" rows follow group membership automatically; "manual" rows are never removed by group changes.
     source: Mapped[str] = mapped_column(String(8), default="manual", server_default="manual")
+    # Registration type: regular, reregistered or other.
+    kind: Mapped[str] = mapped_column(String(16), default="regular", server_default="regular")
 
 
 class ClassSession(Base):
@@ -275,6 +277,7 @@ class GroupMember(Base):
     __tablename__ = "group_members"
     group_id: Mapped[int] = mapped_column(ForeignKey("student_groups.id"), primary_key=True)
     student_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), default="regular", server_default="regular")
 
 
 class CourseGroup(Base):

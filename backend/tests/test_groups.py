@@ -110,3 +110,36 @@ def test_group_rules_names_permissions_and_deleting_a_group(client):
     assert enrolment(client, 1, 5) is not None
     assert client.delete(f"/admin/groups/{group}", headers=admin).json()["removed"] == 1
     assert enrolment(client, 1, 5) is None and client.get(f"/admin/groups/{group}", headers=admin).status_code == 404
+
+
+def test_individual_students_and_registration_types(client):
+    admin = login(client, "admin@focuslock.test")
+    teacher = login(client, "teacher@focuslock.test")
+    added = client.post("/admin/courses/1/students", headers=admin, json={"students": [
+        {"email": "student3@focuslock.test", "kind": "reregistered"}, {"email": "student@focuslock.test", "kind": "other"},
+        {"email": "nobody@focuslock.test"}, {"email": "teacher@focuslock.test"}]})
+    assert added.status_code == 200, added.text
+    body = added.json()
+    assert body["added"] == ["student3@focuslock.test"] and body["updated"] == ["student@focuslock.test"]
+    assert body["unknown"] == ["nobody@focuslock.test"] and body["not_student"] == ["teacher@focuslock.test"]
+    listing = {row["email"]: row for row in client.get("/admin/courses/1/students", headers=admin).json()}
+    assert listing["student3@focuslock.test"]["kind"] == "reregistered" and listing["student@focuslock.test"]["kind"] == "other"
+    assert {row["email"]: row["kind"] for row in client.get("/courses/1/roster", headers=teacher).json()}["student3@focuslock.test"] == "reregistered"
+    assert client.post("/admin/courses/1/students", headers=admin, json={"students": [{"email": "x@y.test", "kind": "bogus"}]}).status_code == 422
+    assert client.put("/admin/courses/1/students/5", headers=admin, json={"kind": "regular"}).json()["kind"] == "regular"
+    assert client.delete("/admin/courses/1/students/5", headers=admin).status_code == 200
+    assert client.post("/admin/courses/1/students", headers=teacher, json={"students": [{"email": "student3@focuslock.test"}]}).status_code == 403
+
+
+def test_group_members_carry_a_kind_into_the_course_enrolment(client):
+    admin = login(client, "admin@focuslock.test")
+    group = make_group(client, admin)
+    client.post(f"/admin/groups/{group}/members", headers=admin, json={"members": [
+        {"email": "student3@focuslock.test", "kind": "reregistered"}, {"email": "student2@focuslock.test"}]})
+    client.put("/admin/courses/1/groups", headers=admin, json={"group_ids": [group]})
+    assert enrolment(client, 1, 5).kind == "reregistered" and enrolment(client, 1, 5).source == "group"
+    members = {m["email"]: m["kind"] for m in client.get(f"/admin/groups/{group}", headers=admin).json()["members"]}
+    assert members["student2@focuslock.test"] == "regular" and members["student3@focuslock.test"] == "reregistered"
+    client.put(f"/admin/groups/{group}/members/5", headers=admin, json={"kind": "other"})
+    assert enrolment(client, 1, 5).kind == "other"
+    assert client.delete("/admin/courses/1/students/5", headers=admin).status_code == 409  # comes from the group

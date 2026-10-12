@@ -3,10 +3,12 @@ import { AdminSlots } from './scheduling';
 import type { Request } from './scheduling';
 
 type Group = { id: number; name: string; members: number; courses: number };
-type GroupDetail = { id: number; name: string; members: { id: number; name: string; email: string }[]; courses: { id: number; code: string; title: string; term: string; teacher: string }[] };
+type Kind = 'regular' | 'reregistered' | 'other';
+type GroupDetail = { id: number; name: string; members: { id: number; name: string; email: string; kind: Kind }[]; courses: { id: number; code: string; title: string; term: string; teacher: string }[] };
 type StudentRow = { id: number; name: string; email: string; groups: string[] };
 type Teacher = { id: number; name: string; email: string; courses: number };
 type CourseOut = { id: number; code: string; title: string; term: string; teacher_id: number; students: number; groups: { id: number; name: string; members: number }[] };
+type CourseStudent = { id: number; name: string; email: string; kind: Kind; source: 'manual' | 'group' };
 type AddResult = { added: string[]; already: string[]; unknown: string[]; not_student: string[]; enrolled: number };
 
 /** Box-style toggles for choosing one or more student groups. */
@@ -15,6 +17,13 @@ function GroupChips({ groups, selected, onToggle, disabled }: { groups: Group[];
   return <div className="group-chips" role="group" aria-label="Student groups">{groups.map(group => <button type="button" key={group.id} disabled={disabled}
     className={`group-chip ${selected.has(group.id) ? 'on' : ''}`} aria-pressed={selected.has(group.id)} onClick={() => onToggle(group.id)}>
     <span className="group-name">{group.name}</span><span className="group-count">{group.members} student{group.members === 1 ? '' : 's'}</span><span className="slot-tick" aria-hidden="true">✓</span></button>)}</div>;
+}
+
+const KINDS: [Kind, string][] = [['regular', 'Regular'], ['reregistered', 'Reregistered'], ['other', 'Other']];
+
+/** Registration type of a student: regular, reregistered or other. */
+function KindSelect({ value, onChange, disabled, label }: { value: Kind; onChange: (kind: Kind) => void; disabled?: boolean; label: string }) {
+  return <select className="kind-select" aria-label={label} value={value} disabled={disabled} onChange={e => onChange(e.target.value as Kind)}>{KINDS.map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select>;
 }
 
 const toggled = (current: Set<number>, id: number) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; };
@@ -28,6 +37,7 @@ export function AdminGroups({ request }: { request: Request }) {
   const [query, setQuery] = useState('');
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [pasted, setPasted] = useState('');
+  const [kind, setKind] = useState<Kind>('regular');
   const [newName, setNewName] = useState('');
   const [renameTo, setRenameTo] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -54,7 +64,7 @@ export function AdminGroups({ request }: { request: Request }) {
     setNewName(''); setNotice(`Group "${group.name}" created.`); await loadGroups(group.id); }); };
   const addMembers = (emails: string[]) => run(async () => {
     if (selectedId === null || !emails.length) return;
-    const outcome = await request<AddResult>(`/admin/groups/${selectedId}/members`, { method: 'POST', body: JSON.stringify({ emails }) });
+    const outcome = await request<AddResult>(`/admin/groups/${selectedId}/members`, { method: 'POST', body: JSON.stringify({ emails, kind }) });
     setResult(outcome); setPicked(new Set()); setPasted('');
     setNotice(`${outcome.added.length} student${outcome.added.length === 1 ? '' : 's'} added.`);
     await Promise.all([loadGroups(selectedId), loadDetail(selectedId), loadStudents()]);
@@ -64,6 +74,11 @@ export function AdminGroups({ request }: { request: Request }) {
     const outcome = await request<{ removed: number; kept: number }>(`/admin/groups/${selectedId}/members/${id}`, { method: 'DELETE' });
     setNotice(outcome.kept ? `Removed from the group. ${outcome.kept} course enrolment${outcome.kept === 1 ? ' was' : 's were'} kept because attendance is already recorded.` : 'Removed from the group.');
     await Promise.all([loadGroups(selectedId), loadDetail(selectedId), loadStudents()]);
+  });
+  const changeKind = (id: number, next: Kind) => run(async () => {
+    if (selectedId === null) return;
+    await request(`/admin/groups/${selectedId}/members/${id}`, { method: 'PUT', body: JSON.stringify({ kind: next }) });
+    setNotice('Registration type updated for every course using this group.'); await loadDetail(selectedId);
   });
   const rename = (event: React.FormEvent) => { event.preventDefault(); void run(async () => {
     if (selectedId === null || renameTo === null) return;
@@ -100,8 +115,11 @@ export function AdminGroups({ request }: { request: Request }) {
         </div>
         <h4>Members <small>{detail.members.length}</small></h4>
         {!detail.members.length && <p className="empty-inline">No students in this group yet.</p>}
-        <div className="member-chips">{detail.members.map(member => <span key={member.id} className="member-chip" title={member.email}>{member.name}<button type="button" aria-label={`Remove ${member.name}`} disabled={busy} onClick={() => void removeMember(member.id)}>×</button></span>)}</div>
+        <div className="member-rows">{detail.members.map(member => <div key={member.id} className="member-row"><span className="pick-name">{member.name}<small>{member.email}</small></span>
+          <KindSelect value={member.kind} label={`Registration type for ${member.name}`} disabled={busy} onChange={next => void changeKind(member.id, next)}/>
+          <button type="button" className="secondary" aria-label={`Remove ${member.name}`} disabled={busy} onClick={() => void removeMember(member.id)}>Remove</button></div>)}</div>
         <h4>Add students</h4>
+        <label className="kind-pick">Add them as<KindSelect value={kind} label="Registration type for the students you add" onChange={setKind}/></label>
         <label>Search students<input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Name or email"/></label>
         <div className="student-pick" role="group" aria-label="Students you can add">{candidates.slice(0, 200).map(student => <label key={student.id} className={`pick-row ${picked.has(student.id) ? 'on' : ''}`}>
           <input type="checkbox" checked={picked.has(student.id)} onChange={() => setPicked(current => toggled(current, student.id))}/>
@@ -122,6 +140,54 @@ export function AdminGroups({ request }: { request: Request }) {
       </div>}
     </div>
   </section>;
+}
+
+/** Individual students on one course (for example reregistered ones), each with a registration type. */
+function CourseStudents({ course, request, onChanged }: { course: CourseOut; request: Request; onChanged: () => void }) {
+  const [enrolled, setEnrolled] = useState<CourseStudent[] | null>(null);
+  const [everyone, setEveryone] = useState<StudentRow[]>([]);
+  const [query, setQuery] = useState('');
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [pasted, setPasted] = useState('');
+  const [kind, setKind] = useState<Kind>('reregistered');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [problems, setProblems] = useState<string[]>([]);
+  const load = async () => { try { setEnrolled(await request<CourseStudent[]>(`/admin/courses/${course.id}/students`)); } catch (e) { setError((e as Error).message); } };
+  useEffect(() => { void load(); request<StudentRow[]>('/admin/students').then(setEveryone).catch(e => setError((e as Error).message)); }, [course.id]);
+  const inCourse = new Set(enrolled?.map(row => row.id));
+  const candidates = everyone.filter(row => !inCourse.has(row.id) && `${row.name} ${row.email}`.toLowerCase().includes(query.toLowerCase().trim()));
+  const pastedEmails = pasted.split(/[\s,;]+/).map(item => item.trim()).filter(Boolean);
+  async function run(task: () => Promise<void>) { setBusy(true); setError(''); setNotice(''); setProblems([]); try { await task(); await load(); onChanged(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }
+  const add = (emails: string[]) => run(async () => {
+    const out = await request<{ added: string[]; updated: string[]; unknown: string[]; not_student: string[] }>(`/admin/courses/${course.id}/students`, { method: 'POST', body: JSON.stringify({ students: emails.map(email => ({ email, kind })) }) });
+    setNotice(`${out.added.length} added${out.updated.length ? `, ${out.updated.length} updated` : ''}.`);
+    setProblems([...(out.unknown.length ? [`No account found: ${out.unknown.join(', ')}`] : []), ...(out.not_student.length ? [`Not student accounts: ${out.not_student.join(', ')}`] : [])]);
+    setPicked(new Set()); setPasted('');
+  });
+  const change = (id: number, next: Kind) => run(async () => { await request(`/admin/courses/${course.id}/students/${id}`, { method: 'PUT', body: JSON.stringify({ kind: next }) }); setNotice('Registration type updated.'); });
+  const remove = (id: number) => run(async () => { await request(`/admin/courses/${course.id}/students/${id}`, { method: 'DELETE' }); setNotice('Student removed from the course.'); });
+  return <div className="course-students">
+    <h4>Students in {course.code} <small>{enrolled?.length ?? 0}</small></h4>
+    {error && <p className="error" role="alert">{error}</p>}
+    {notice && <p className="success" role="status">{notice}</p>}
+    {problems.length > 0 && <div className="inline-hint" role="status"><ul>{problems.map(text => <li key={text}>{text}</li>)}</ul></div>}
+    {enrolled && !enrolled.length && <p className="empty-inline">Nobody is enrolled yet.</p>}
+    <div className="member-rows">{enrolled?.map(row => <div key={row.id} className="member-row"><span className="pick-name">{row.name}<small>{row.email}</small></span>
+      <KindSelect value={row.kind} label={`Registration type for ${row.name}`} disabled={busy} onChange={next => void change(row.id, next)}/>
+      {row.source === 'group' ? <span className="chip" title="Comes from a linked student group">via group</span> : <button type="button" className="secondary" disabled={busy} onClick={() => void remove(row.id)}>Remove</button>}</div>)}</div>
+    <h4>Add individual students</h4>
+    <label className="kind-pick">Add them as<KindSelect value={kind} label="Registration type for the students you add" onChange={setKind}/></label>
+    <label>Search students<input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Name or email"/></label>
+    <div className="student-pick" role="group" aria-label="Students you can add">{candidates.slice(0, 100).map(row => <label key={row.id} className={`pick-row ${picked.has(row.id) ? 'on' : ''}`}>
+      <input type="checkbox" checked={picked.has(row.id)} onChange={() => setPicked(current => toggled(current, row.id))}/><span className="pick-name">{row.name}</span><span className="pick-email">{row.email}</span></label>)}
+      {!candidates.length && <p className="empty-inline">No matching students outside this course.</p>}</div>
+    <div className="actions"><button disabled={busy || !picked.size} onClick={() => void add(everyone.filter(row => picked.has(row.id)).map(row => row.email))}>{picked.size ? `Add ${picked.size} selected` : 'Add selected'}</button>
+      <button type="button" className="secondary" disabled={!picked.size} onClick={() => setPicked(new Set())}>Clear</button></div>
+    <label>Or paste email addresses <small>(one per line, or separated by commas)</small><textarea rows={3} value={pasted} onChange={e => setPasted(e.target.value)} spellCheck={false}/></label>
+    <div className="actions"><button className="secondary" disabled={busy || !pastedEmails.length} onClick={() => void add(pastedEmails)}>{pastedEmails.length ? `Add ${pastedEmails.length} pasted` : 'Add pasted addresses'}</button></div>
+  </div>;
 }
 
 type CourseLine = { code: string; title: string; problems: string[] };
@@ -151,6 +217,7 @@ export function AdminCourses({ request }: { request: Request }) {
   const [groups, setGroups] = useState<Group[]>([]);
   const [chosen, setChosen] = useState<Set<number>>(new Set());
   const [editing, setEditing] = useState<{ id: number; groups: Set<number> } | null>(null);
+  const [studentsFor, setStudentsFor] = useState<number | null>(null);
   const [term, setTerm] = useState('');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -229,7 +296,9 @@ export function AdminCourses({ request }: { request: Request }) {
             ? <div className="course-edit"><GroupChips groups={groups} selected={editing.groups} onToggle={id => setEditing({ id: editing.id, groups: toggled(editing.groups, id) })} disabled={busy}/>
               <div className="actions"><button disabled={busy} onClick={() => void saveGroups()}>Save groups</button><button className="secondary" onClick={() => setEditing(null)}>Cancel</button></div></div>
             : <div className="course-groups">{course.groups.length ? course.groups.map(group => <span key={group.id} className="chip">{group.name}</span>) : <span className="muted-note">No group linked</span>}
-              <button className="secondary" onClick={() => setEditing({ id: course.id, groups: new Set(course.groups.map(group => group.id)) })}>Change groups</button></div>}
+              <button className="secondary" onClick={() => setEditing({ id: course.id, groups: new Set(course.groups.map(group => group.id)) })}>Change groups</button>
+              <button className="secondary" aria-expanded={studentsFor === course.id} onClick={() => setStudentsFor(current => current === course.id ? null : course.id)}>{studentsFor === course.id ? 'Hide students' : 'Students'}</button></div>}
+          {studentsFor === course.id && teacherId !== null && <CourseStudents course={course} request={request} onChanged={() => { void loadCourses(teacherId); void loadGroups(); }}/>}
         </div>)}
       </aside>
     </div>}

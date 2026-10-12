@@ -88,7 +88,7 @@ def live():
 def ready(db: Session = Depends(get_db)):
     try:
         revision = db.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        if revision != "0012":
+        if revision != "0013":
             raise ValueError("Schema revision mismatch")
         cfg = settings()
         if cfg.app_env == "production" and (not cfg.oidc_clients_configured or
@@ -174,7 +174,7 @@ def courses(user: User = Depends(current_user), db: Session = Depends(get_db)):
 @app.get("/courses/{course_id}/roster")
 def roster(course_id: int, user: User = Depends(teacher), db: Session = Depends(get_db)):
     visible_course(db, user, course_id)
-    return [user_view(u) for u in db.scalars(select(User).join(Enrollment, Enrollment.student_id == User.id).where(Enrollment.course_id == course_id).order_by(User.name))]
+    return [{**user_view(u), "kind": kind} for u, kind in db.execute(select(User, Enrollment.kind).join(Enrollment, Enrollment.student_id == User.id).where(Enrollment.course_id == course_id).order_by(User.name)).all()]
 
 
 @app.get("/sessions")

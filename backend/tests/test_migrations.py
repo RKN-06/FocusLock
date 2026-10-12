@@ -24,7 +24,7 @@ def test_migration_round_trip(tmp_path):
     engine = create_engine(env["DATABASE_URL"])
     assert set(inspect(engine).get_table_names()) == {"alembic_version", "users", "course_offerings", "enrollments", "sessions", "attendance", "dev_tokens", "devices", "device_challenges", "attendance_events", "pending_attendance", "course_resources", "focus_events", "ble_receivers", "ble_credentials", "ble_sightings", "optional_consents", "data_requests", "admin_audit", "rate_attempts", "integrity_receipts", "focus_exit_requests", "face_templates", "time_slots", "student_groups", "group_members", "course_groups", "session_codes"}
     with engine.connect() as connection:
-        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0012"
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0013"
         assert connection.execute(text("SELECT state FROM sessions WHERE id=1")).scalar_one() == "ready"
         assert connection.execute(text("SELECT status FROM attendance WHERE session_id=1 AND student_id=3")).scalar_one() == "present"
         assert connection.execute(text("SELECT action FROM attendance_events WHERE session_id=1 AND student_id=3")).scalar_one() == "legacy_import"

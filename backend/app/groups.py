@@ -1,5 +1,6 @@
 """Student groups (cohorts) managed by administrators. Linking a group to a course enrols every member automatically."""
 from datetime import datetime, timezone
+from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, func, select
@@ -19,8 +20,28 @@ class GroupInput(Strict):
     name: str = Field(min_length=1, max_length=80)
 
 
+Kind = Literal["regular", "reregistered", "other"]
+RANK = {"regular": 0, "other": 1, "reregistered": 2}
+
+
+class MemberEntry(Strict):
+    email: str = Field(min_length=1, max_length=254)
+    kind: Kind = "regular"
+
+
 class MembersInput(Strict):
-    emails: list[str] = Field(min_length=1, max_length=500)
+    """Either plain addresses (all given `kind`) or entries that each carry their own kind."""
+    emails: list[str] = Field(default_factory=list, max_length=500)
+    members: list[MemberEntry] = Field(default_factory=list, max_length=500)
+    kind: Kind = "regular"
+
+
+class KindInput(Strict):
+    kind: Kind
+
+
+class CourseStudentsInput(Strict):
+    students: list[MemberEntry] = Field(min_length=1, max_length=500)
 
 
 class CourseGroupsInput(Strict):
@@ -37,15 +58,21 @@ def sync_course(db: Session, course_id: int) -> dict:
 
     Members are added. A group-sourced enrolment is removed only when nobody linked still covers the student and the student has no
     attendance recorded in the course; otherwise it is kept and counted. Manual enrolments are never touched."""
-    desired = set(db.scalars(select(GroupMember.student_id).join(CourseGroup, CourseGroup.group_id == GroupMember.group_id)
-                             .where(CourseGroup.course_id == course_id)))
+    desired: dict[int, str] = {}
+    for student_id, kind in db.execute(select(GroupMember.student_id, GroupMember.kind).join(CourseGroup, CourseGroup.group_id == GroupMember.group_id)
+                                       .where(CourseGroup.course_id == course_id)):
+        if student_id not in desired or RANK.get(kind, 0) > RANK[desired[student_id]]:
+            desired[student_id] = kind  # in several linked groups, the most specific registration type wins
     rows = {row.student_id: row for row in db.scalars(select(Enrollment).where(Enrollment.course_id == course_id))}
     added = removed = kept = 0
-    for student_id in desired - set(rows):
-        db.add(Enrollment(course_id=course_id, student_id=student_id, source="group"))
+    for student_id in set(desired) - set(rows):
+        db.add(Enrollment(course_id=course_id, student_id=student_id, source="group", kind=desired[student_id]))
         added += 1
     for student_id, row in rows.items():
-        if row.source != "group" or student_id in desired:
+        if row.source != "group":
+            continue
+        if student_id in desired:
+            row.kind = desired[student_id]
             continue
         has_attendance = db.scalar(select(func.count()).select_from(Attendance).where(Attendance.course_id == course_id, Attendance.student_id == student_id))
         if has_attendance:
@@ -152,12 +179,13 @@ def delete_group(group_id: int, user: User = Depends(admin), db: Session = Depen
 @router.get("/admin/groups/{group_id}")
 def group_detail(group_id: int, user: User = Depends(admin), db: Session = Depends(get_db)):
     group = group_or_404(db, group_id)
-    members = db.scalars(select(User).join(GroupMember, GroupMember.student_id == User.id).where(GroupMember.group_id == group_id).order_by(User.name))
+    members = db.scalars(select(User).join(GroupMember, GroupMember.student_id == User.id).where(GroupMember.group_id == group_id).order_by(User.name)).all()
+    kinds = dict(db.execute(select(GroupMember.student_id, GroupMember.kind).where(GroupMember.group_id == group_id)).all())
     courses = db.execute(select(CourseOffering, User.name).join(User, User.id == CourseOffering.teacher_id)
                          .join(CourseGroup, CourseGroup.course_id == CourseOffering.id).where(CourseGroup.group_id == group_id)
                          .order_by(CourseOffering.code)).all()
     return {"id": group.id, "name": group.name,
-            "members": [{"id": m.id, "name": m.name, "email": m.email} for m in members],
+            "members": [{"id": m.id, "name": m.name, "email": m.email, "kind": kinds.get(m.id, "regular")} for m in members],
             "courses": [{"id": c.id, "code": c.code, "title": c.title, "term": c.term, "teacher": teacher} for c, teacher in courses]}
 
 
@@ -169,7 +197,16 @@ def add_members(group_id: int, body: MembersInput, user: User = Depends(admin), 
     rate_limit(db, "group-members", str(user.id), 30, 3600)
     have = set(db.scalars(select(GroupMember.student_id).where(GroupMember.group_id == group_id)))
     added, already, unknown, not_student = [], [], [], []
-    for raw in dict.fromkeys(email.strip().lower() for email in body.emails if email.strip()):
+    kinds: dict[str, str] = {}
+    for email in body.emails:
+        if email.strip():
+            kinds.setdefault(email.strip().lower(), body.kind)
+    for entry in body.members:
+        if entry.email.strip():
+            kinds[entry.email.strip().lower()] = entry.kind
+    if not kinds:
+        raise HTTPException(422, "Give at least one email address")
+    for raw in kinds:
         person = db.scalar(select(User).where(func.lower(User.email) == raw))
         if person is None:
             unknown.append(raw)
@@ -178,7 +215,7 @@ def add_members(group_id: int, body: MembersInput, user: User = Depends(admin), 
         elif person.id in have:
             already.append(raw)
         else:
-            db.add(GroupMember(group_id=group_id, student_id=person.id))
+            db.add(GroupMember(group_id=group_id, student_id=person.id, kind=kinds[raw]))
             have.add(person.id)
             added.append(raw)
     db.flush()
@@ -190,6 +227,21 @@ def add_members(group_id: int, body: MembersInput, user: User = Depends(admin), 
         audit(db, user, "group_members_added", "group", str(group_id), f"Added {len(added)} students")
     db.commit()
     return {"added": added, "already": already, "unknown": unknown, "not_student": not_student, "enrolled": enrolled["added"]}
+
+
+@router.put("/admin/groups/{group_id}/members/{student_id}")
+def set_member_kind(group_id: int, student_id: int, body: KindInput, user: User = Depends(admin), db: Session = Depends(get_db)):
+    group_or_404(db, group_id)
+    member = db.get(GroupMember, (group_id, student_id))
+    if member is None:
+        raise HTTPException(404, "That student is not in this group")
+    member.kind = body.kind
+    db.flush()
+    for course_id in linked_courses(db, group_id):
+        sync_course(db, course_id)
+    audit(db, user, "group_member_kind_set", "group", str(group_id), f"Student {student_id} is {body.kind}")
+    db.commit()
+    return {"id": student_id, "kind": body.kind}
 
 
 @router.delete("/admin/groups/{group_id}/members/{student_id}")
@@ -228,3 +280,67 @@ def put_course_groups(course_id: int, body: CourseGroupsInput, user: User = Depe
     audit(db, user, "course_groups_set", "course", str(course_id), f"{len(set(body.group_ids))} groups; {result['added']} enrolled, {result['removed']} removed, {result['kept']} kept")
     db.commit()
     return {**course_detail(db, course), "sync": result}
+
+
+@router.get("/admin/courses/{course_id}/students")
+def course_students(course_id: int, user: User = Depends(admin), db: Session = Depends(get_db)):
+    if db.get(CourseOffering, course_id) is None:
+        raise HTTPException(404, "Course not found")
+    rows = db.execute(select(User, Enrollment).join(Enrollment, Enrollment.student_id == User.id).where(Enrollment.course_id == course_id).order_by(User.name, User.id)).all()
+    return [{"id": u.id, "name": u.name, "email": u.email, "kind": e.kind, "source": e.source} for u, e in rows]
+
+
+@router.post("/admin/courses/{course_id}/students")
+def add_course_students(course_id: int, body: CourseStudentsInput, user: User = Depends(admin), db: Session = Depends(get_db)):
+    """Enrol individual students (for example reregistered ones) with a registration type. An existing enrolment just takes the new type."""
+    from .stage6 import rate_limit
+    if db.get(CourseOffering, course_id) is None:
+        raise HTTPException(404, "Course not found")
+    rate_limit(db, "course-students", str(user.id), 30, 3600)
+    added, updated, unknown, not_student = [], [], [], []
+    for entry in {e.email.strip().lower(): e for e in body.students if e.email.strip()}.values():
+        raw = entry.email.strip().lower()
+        person = db.scalar(select(User).where(func.lower(User.email) == raw))
+        if person is None:
+            unknown.append(raw)
+            continue
+        if person.role != "student":
+            not_student.append(raw)
+            continue
+        row = db.get(Enrollment, (course_id, person.id))
+        if row is None:
+            db.add(Enrollment(course_id=course_id, student_id=person.id, source="manual", kind=entry.kind))
+            added.append(raw)
+        else:
+            row.kind, row.source = entry.kind, "manual"  # set by hand, so group changes no longer move it
+            updated.append(raw)
+    if added or updated:
+        audit(db, user, "course_students_set", "course", str(course_id), f"{len(added)} added, {len(updated)} updated")
+    db.commit()
+    return {"added": added, "updated": updated, "unknown": unknown, "not_student": not_student}
+
+
+@router.put("/admin/courses/{course_id}/students/{student_id}")
+def set_course_student_kind(course_id: int, student_id: int, body: KindInput, user: User = Depends(admin), db: Session = Depends(get_db)):
+    row = db.get(Enrollment, (course_id, student_id))
+    if row is None:
+        raise HTTPException(404, "That student is not enrolled")
+    row.kind, row.source = body.kind, "manual"
+    audit(db, user, "course_student_kind_set", "course", str(course_id), f"Student {student_id} is {body.kind}")
+    db.commit()
+    return {"id": student_id, "kind": body.kind}
+
+
+@router.delete("/admin/courses/{course_id}/students/{student_id}")
+def remove_course_student(course_id: int, student_id: int, user: User = Depends(admin), db: Session = Depends(get_db)):
+    row = db.get(Enrollment, (course_id, student_id))
+    if row is None:
+        raise HTTPException(404, "That student is not enrolled")
+    if row.source == "group":
+        raise HTTPException(409, "This student comes from a linked group. Remove them from the group instead.")
+    if db.scalar(select(func.count()).select_from(Attendance).where(Attendance.course_id == course_id, Attendance.student_id == student_id)):
+        raise HTTPException(409, "This student has attendance in the course, so they stay enrolled")
+    db.delete(row)
+    audit(db, user, "course_student_removed", "course", str(course_id), f"Student {student_id}")
+    db.commit()
+    return {"removed": student_id}

@@ -93,3 +93,25 @@ def test_analytics_is_private_to_the_courses_teacher_and_handles_an_empty_course
     empty = client.get("/courses/2/analytics", headers=teacher2).json()
     assert empty["summary"]["held"] == 0 and empty["summary"]["attendance_rate"] is None
     assert all(row["flag"] == "ok" for row in empty["students"])
+
+
+def test_student_analytics_weekly_monthly_and_overall(client):
+    from app.models import FocusExitRequest
+    teacher = login(client, "teacher@focuslock.test")
+    ids = add_course_history(client)
+    with client.db_factory() as db:
+        db.add(FocusExitRequest(session_id=ids[0], student_id=4, kind="exit", status="approved", created_at=datetime.now(timezone.utc)))
+        db.commit()
+    body = client.get("/courses/1/students/4/analytics", headers=teacher).json()
+    totals = body["totals"]
+    assert body["student"]["name"] == "Taylor Chen" and body["student"]["kind"] == "regular"
+    assert totals["present"] == 1 and totals["absent"] == 3 and totals["breaks"] == 1 and totals["breaks_approved"] == 1 and totals["quit_focus"] == 1
+    assert totals["rate"] == round(100 * 1 / totals["held"], 1)
+    assert sum(row["sessions"] for row in body["weekly"]) == totals["held"] and sum(row["present"] for row in body["monthly"]) == 1
+    assert len(body["history"]) == totals["held"]
+    overall = client.get("/courses/1/analytics", headers=teacher).json()
+    assert overall["summary"]["breaks"] == 1 and sum(row["sessions"] for row in overall["weekly"]) == overall["summary"]["held"]
+    assert overall["students"][0]["breaks"] in (0, 1) and overall["monthly"]
+    assert client.get("/courses/1/students/5/analytics", headers=teacher).status_code == 404  # not in this course
+    assert client.get("/courses/1/students/4/analytics", headers=login(client, "teacher2@focuslock.test")).status_code in (403, 404)
+    assert client.get("/courses/1/students/4/analytics", headers=login(client)).status_code == 403
