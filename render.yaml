@@ -42,6 +42,8 @@ services:
         generateValue: true
       - key: FACE_CHECK_MODE
         value: enrolled
+      - key: CAMPUS_TIMEZONE
+        value: Asia/Kolkata
       - key: PLAY_INTEGRITY_MODE
         value: "off"
       - key: RESOURCE_ALLOWED_HOSTS

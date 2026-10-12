@@ -188,3 +188,46 @@ h2,h3,h4{line-height:1.25}.course-header h2{line-height:1.2}.session-banner h3{l
 .session-actions .danger{background:rgba(255,255,255,.14);color:#ffd2c9;border-color:rgba(255,210,201,.5)}
 .danger-solid{background:#a33a29;color:#fff}.danger-solid:hover:not(:disabled){filter:brightness(1.1)}
 .danger-zone{border-left:5px solid #a33a29!important}.danger-zone h3{margin:0 0 4px}.danger-zone p{margin:0 0 10px}
+
+/* Scheduling: date picker, repeat helper, box-style slot tiles, summary, admin slot cards */
+.schedule{display:grid;gap:14px}.schedule h3{margin:0 0 4px}.schedule p{margin:0}
+.schedule-step{border:1px solid var(--line);border-radius:14px;padding:14px 16px 16px;margin:0;min-width:0}
+.schedule-step legend{display:flex;align-items:center;gap:8px;padding:0 8px;font-weight:700;color:var(--text)}
+.schedule-step legend small{font-weight:500;color:var(--muted);font-size:12px}
+.step-no{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--on-accent);font-size:12px;font-weight:800}
+.date-step{display:grid;grid-template-columns:minmax(260px,330px) minmax(0,1fr);gap:20px;align-items:start}
+.month-picker{background:var(--glass-2);border:1px solid var(--line);border-radius:14px;padding:12px}
+.month-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.month-head button{min-width:36px;padding:6px 0;font-size:16px;line-height:1}
+.month-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.month-dow{text-align:center;font-size:11px;color:var(--muted);padding:4px 0;letter-spacing:.5px}
+.month-day{aspect-ratio:1;padding:0;border-radius:10px;background:transparent;color:var(--text);border:1px solid transparent;font-weight:600;font-size:13px;min-height:36px}
+.month-day:hover:not(:disabled){background:var(--accent-soft);filter:none;box-shadow:none}
+.month-day.today{border-color:var(--accent)}
+.month-day.on{background:var(--accent);color:var(--on-accent)}
+.month-day:disabled{opacity:.3}
+.repeat-box{display:grid;gap:10px;align-content:start}.repeat-box p{font-size:13px}
+.weekday-row,.preview-list{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-block;background:var(--glass-2);color:var(--text);border:1px solid var(--line);border-radius:99px;padding:5px 12px;font-size:12px;font-weight:600}
+button.chip{cursor:pointer}button.chip.on{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.weeks{display:flex;align-items:center;gap:8px;margin:0;font-weight:600}.weeks input{display:inline-block;width:72px;margin:0;padding:7px 8px}
+.slot-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:10px}
+.slot-tile{position:relative;display:grid;gap:2px;text-align:left;background:var(--glass-2);color:var(--text);border:2px solid var(--line);border-radius:14px;padding:14px 14px 12px;min-height:76px;transition:transform .2s cubic-bezier(.3,1.5,.5,1),border-color .2s,background .2s,box-shadow .2s}
+.slot-tile:hover{border-color:var(--accent);filter:none}
+.slot-tile .slot-name{font-weight:700;font-size:15px}
+.slot-tile .slot-time{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.slot-tile .slot-tick{position:absolute;top:10px;right:10px;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;border:2px solid var(--line);color:transparent;transition:all .2s}
+.slot-tile.on{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 8px 20px var(--accent-soft)}
+.slot-tile.on .slot-tick{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.schedule-summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;background:var(--accent-soft);border-radius:12px;padding:12px 16px;color:var(--text)}
+.schedule-summary strong{font-size:22px}.schedule-summary span{color:var(--muted);font-size:13px}.schedule-summary .chip{color:var(--text)}
+.schedule-summary .preview-list{flex-basis:100%;margin-top:4px}
+.schedule-summary.over{background:var(--bad-bg)}
+.schedule .inline-hint{margin:0}.schedule .inline-hint ul{margin:6px 0 0;padding-left:18px}
+.slot-admin-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;margin-top:18px}
+.slot-card{display:grid;gap:8px;background:var(--glass);border:1px solid var(--edge);border-top:4px solid var(--accent);border-radius:16px;padding:16px;box-shadow:var(--shadow)}
+.slot-card.off{border-top-color:var(--line);opacity:.78}
+.slot-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px}.slot-card .slot-name{font-weight:700;font-size:16px}
+.slot-card .slot-time{font-size:22px;font-weight:700;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+.slot-card .actions{flex-wrap:wrap;align-items:center}.slot-form{margin:18px 0;border-radius:16px}
+@media(max-width:760px){.date-step{grid-template-columns:1fr}.slot-grid{grid-template-columns:repeat(2,1fr)}.schedule-step{padding:12px}}

@@ -10,6 +10,11 @@ from .auth import digest
 def seed(db):
     if not settings().dev_auth_enabled:
         raise RuntimeError("Seeding requires APP_ENV=development, ENABLE_DEV_AUTH=true and DEV_PASSWORD")
+    from .models import TimeSlot
+    from .slot_defaults import DEFAULT_SLOTS
+    if db.scalar(select(TimeSlot.id).limit(1)) is None:
+        db.add_all([TimeSlot(label=label, starts_at=start, ends_at=end, active=True) for label, start, end in DEFAULT_SLOTS])
+        db.commit()
     # Do not modify an existing or partially populated database.
     if db.scalar(select(User.id).limit(1)) is not None:
         return False

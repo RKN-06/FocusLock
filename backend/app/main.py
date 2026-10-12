@@ -88,7 +88,7 @@ def live():
 def ready(db: Session = Depends(get_db)):
     try:
         revision = db.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        if revision != "0009":
+        if revision != "0010":
             raise ValueError("Schema revision mismatch")
         cfg = settings()
         if cfg.app_env == "production" and (not cfg.oidc_clients_configured or
@@ -273,3 +273,5 @@ from .face import router as face_router  # noqa: E402
 app.include_router(face_router)
 from .session_admin import router as session_admin_router  # noqa: E402
 app.include_router(session_admin_router)
+from .slots import router as slots_router  # noqa: E402
+app.include_router(slots_router)

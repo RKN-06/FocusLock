@@ -1,5 +1,5 @@
-from datetime import datetime
-from sqlalchemy import false, Boolean, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Integer, String, UniqueConstraint, Text
+from datetime import datetime, time
+from sqlalchemy import false, true, Boolean, Time, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Integer, String, UniqueConstraint, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from .db import Base
 
@@ -247,3 +247,15 @@ class IntegrityReceipt(Base):
     token_digest: Mapped[str] = mapped_column(String(64), primary_key=True)
     request_hash: Mapped[str] = mapped_column(String(64))
     verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+class TimeSlot(Base):
+    """A predefined class period. Only administrators change these; teachers pick from them when scheduling."""
+    __tablename__ = "time_slots"
+    __table_args__ = (CheckConstraint("ends_at > starts_at", name="slot_time_order"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    label: Mapped[str] = mapped_column(String(60), unique=True)
+    starts_at: Mapped[time] = mapped_column(Time)
+    ends_at: Mapped[time] = mapped_column(Time)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

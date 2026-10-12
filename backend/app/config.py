@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     retention_sighting_days: int = 7
     retention_credential_days: int = 1
     cors_origins: str = "http://localhost:5173"
+    # Time slots are wall-clock times in this IANA zone, so a 09:00 slot is 09:00 at the college wherever the teacher's computer is.
+    campus_timezone: str = "Asia/Kolkata"
     face_template_key: str = ""
     # Local compatibility default; production configuration must set this false.
     face_template_client_download: bool = True

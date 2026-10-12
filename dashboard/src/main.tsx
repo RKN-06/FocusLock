@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import QRCode from 'qrcode';
 import './styles.css';
+import { AdminSlots, ScheduleSessions } from './scheduling';
 
 try {
   const savedTheme = localStorage.getItem('focuslock-theme');
@@ -20,7 +21,7 @@ if (window.matchMedia('(prefers-reduced-motion: no-preference) and (pointer: fin
   }, { passive: true });
 }
 
-type User = { id: number; name: string; email: string; role: 'student' | 'teacher' };
+type User = { id: number; name: string; email: string; role: 'student' | 'teacher' | 'admin' };
 type Course = { id: number; code: string; title: string; term: string };
 type Session = { id: number; course_id: number; title: string; room_code: string; starts_at: string; ends_at: string; state: 'ready' | 'checkin_pending' | 'active' | 'paused' | 'ended' };
 type Resource = { id: number; session_id: number; title: string; url: string; kind: 'pdf' | 'text'; downloadable: boolean };
@@ -135,9 +136,9 @@ function App() {
     event.preventDefault(); setBusy(true); setError('');
     try {
       const result = await api<Auth>('/auth/dev-login', undefined, { method: 'POST', body: JSON.stringify({ email, password }) });
-      if (result.user.role !== 'teacher') {
+      if (result.user.role !== 'teacher' && result.user.role !== 'admin') {
         await api('/auth/logout', result.access_token, { method: 'POST' });
-        throw new Error('Use a teacher demo account here. Students use the Android app.');
+        throw new Error('Use a teacher or administrator account here. Students use the Android app.');
       }
       setPassword(''); setAuth(result);
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
@@ -147,11 +148,11 @@ function App() {
     catch { /* Local credentials are always cleared; server tokens expire after eight hours. */ }
     setAuth(null);
   }
-  return <><header><div className="brand">FocusLock<span>TEACHER WORKSPACE</span></div><div className="account"><ThemeToggle/>{auth && <>{auth.user.name}<button className="secondary" onClick={signOut}>Sign out</button></>}</div></header>
+  return <><header><div className="brand">FocusLock<span>{auth?.user.role === 'admin' ? 'ADMINISTRATION' : 'TEACHER WORKSPACE'}</span></div><div className="account"><ThemeToggle/>{auth && <>{auth.user.name}<button className="secondary" onClick={signOut}>Sign out</button></>}</div></header>
     {enabled && <div className="dev-banner">Demo · sample data only</div>}
     {!auth ? <main className="login"><div><p className="eyebrow">Smart classroom management</p><h1>Smarter classrooms<br/>start here.</h1><p>Attendance, focus sessions and course resources, managed from a single workspace.</p></div>
       <div className="panel"><h2>Teacher sign-in</h2>{enabled ? <form onSubmit={signIn}><label>Email<input type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)}/></label><label>Password<input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)}/></label><button disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button></form> : <><p>Use your college account.</p><button disabled={!college?.college_oidc || !college.authorization_endpoint || busy} onClick={() => void collegeSignIn()}>Sign in with college</button>{!college?.college_oidc && <p role="status">College sign-in isn't set up yet.</p>}</>}{error && <p className="error" role="alert">{error}</p>}</div></main>
-      : <Dashboard auth={auth}/>}
+      : auth.user.role === 'admin' ? <AdminSlots request={<T,>(path: string, options?: RequestInit) => api<T>(path, auth.access_token, options)}/> : <Dashboard auth={auth}/>}
     <footer>A QR check-in is evidence of participation, not proof of physical presence.</footer></>;
 }
 
@@ -189,10 +190,6 @@ function Dashboard({ auth }: { auth: Auth }) {
   const [rosterQuery, setRosterQuery] = useState('');
   const [rosterFilter, setRosterFilter] = useState<'all' | 'present' | 'unrecorded' | 'review'>('all');
   const [createOpen, setCreateOpen] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newStarts, setNewStarts] = useState(() => localInput(new Date()));
-  const [newEnds, setNewEnds] = useState(() => localInput(new Date(Date.now() + 60 * 60_000)));
-  const [newRoom, setNewRoom] = useState('UNASSIGNED');
   const [privacyReview, setPrivacyReview] = useState<{ id: number; status: 'accepted' | 'declined' } | null>(null);
   const [privacyResolution, setPrivacyResolution] = useState('');
   const [confirmation, setConfirmation] = useState<{ studentId: number; status: string } | null>(null);
@@ -319,18 +316,6 @@ function Dashboard({ auth }: { auth: Auth }) {
       setNotice('Session and check-ins refreshed.');
     } catch (e) { setError((e as Error).message); } finally { setSaving(null); }
   }
-  async function createSession(event: React.FormEvent) {
-    event.preventDefault(); if (!course) return;
-    const starts = new Date(newStarts), ends = new Date(newEnds);
-    if (Number.isNaN(starts.getTime()) || Number.isNaN(ends.getTime()) || ends <= starts) { setError('Choose an end time after the start time.'); return; }
-    setError(''); setSaving(-1);
-    try {
-      const created = await api<Session>('/sessions', token, { method: 'POST', body: JSON.stringify({ course_id: course.id, title: newTitle.trim(), starts_at: starts.toISOString(), ends_at: ends.toISOString(), room_code: newRoom.trim() }) });
-      setSessions(rows => [...rows, created].sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()));
-      setSession(created); setDayFilter(''); setNewTitle(''); setCreateOpen(false); setSection('overview');
-      setNotice('Session scheduled. Open check-in when its start time arrives.');
-    } catch (e) { setError((e as Error).message); } finally { setSaving(null); }
-  }
   function askDelete(target: 'one' | 'all') {
     setDeleteTarget(target); setDeleteReason(''); setDeleteConfirm(''); setCreateOpen(false); setError(''); setNotice('');
   }
@@ -445,7 +430,7 @@ function Dashboard({ auth }: { auth: Auth }) {
         {!loading && !courses.length && <p>No courses are assigned to this teacher account.</p>}
       </aside>
       <section className="panel workspace-panel">
-        <div className="course-header"><div><p className="eyebrow">{course?.code ?? 'Course'}</p><h2>{course?.title ?? 'Your course workspace'}</h2><p>{course?.term ?? 'Choose a course to begin'}</p></div>{course && <div className="header-actions"><button className="secondary" onClick={() => { setCreateOpen(open => !open); setNewStarts(localInput(new Date())); setNewEnds(localInput(new Date(Date.now() + 60 * 60_000))); setError(''); }} disabled={saving !== null}>{createOpen ? 'Close form' : '+ New session'}</button>{sessions.length > 0 && <button className="secondary danger" onClick={() => askDelete('all')} disabled={saving !== null}>Delete all sessions</button>}</div>}</div>
+        <div className="course-header"><div><p className="eyebrow">{course?.code ?? 'Course'}</p><h2>{course?.title ?? 'Your course workspace'}</h2><p>{course?.term ?? 'Choose a course to begin'}</p></div>{course && <div className="header-actions"><button className="secondary" onClick={() => { setCreateOpen(open => !open); setDeleteTarget(null); setError(''); }} disabled={saving !== null}>{createOpen ? 'Close form' : '+ Schedule sessions'}</button>{sessions.length > 0 && <button className="secondary danger" onClick={() => askDelete('all')} disabled={saving !== null}>Delete all sessions</button>}</div>}</div>
         {loading ? <p role="status">Loading course…</p> : <>
           {deleteTarget && course && <form className="create-session danger-zone" onSubmit={deleteSessions}>
             <div><h3>{deleteTarget === 'all' ? `Delete all ${sessions.length} session${sessions.length === 1 ? '' : 's'} in ${course.code}?` : `Delete session "${session?.title ?? ''}"?`}</h3><p>This permanently removes attendance records, resources and focus events for {deleteTarget === 'all' ? 'these sessions' : 'this session'}. It cannot be undone.</p></div>
@@ -453,11 +438,12 @@ function Dashboard({ auth }: { auth: Auth }) {
             {deleteTarget === 'all' && <label>Type DELETE to confirm<input required autoComplete="off" value={deleteConfirm} onChange={e => setDeleteConfirm(e.target.value)}/></label>}
             <div className="actions"><button className="danger-solid" disabled={saving !== null}>Delete permanently</button><button type="button" className="secondary" onClick={() => setDeleteTarget(null)}>Cancel</button></div>
           </form>}
-          {createOpen && course && <form className="create-session" onSubmit={createSession}>
-            <div><h3>Schedule a session</h3></div>
-            <div className="form-grid"><label>Session title<input required minLength={3} maxLength={150} value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Week 4 · Workshop"/></label><label>Room code<input required maxLength={40} pattern="[A-Za-z0-9._-]+" value={newRoom} onChange={e => setNewRoom(e.target.value)} placeholder="CS-101"/></label><label>Starts<input required type="datetime-local" value={newStarts} onChange={e => setNewStarts(e.target.value)}/></label><label>Ends<input required type="datetime-local" value={newEnds} onChange={e => setNewEnds(e.target.value)}/></label></div>
-            <div className="actions"><button disabled={saving !== null}>Create session</button><button type="button" className="secondary" onClick={() => setCreateOpen(false)}>Cancel</button></div>
-          </form>}
+          {createOpen && course && <ScheduleSessions course={course} request={<T,>(path: string, options?: RequestInit) => api<T>(path, token, options)} onClose={() => setCreateOpen(false)} onCreated={added => {
+            const ordered = [...added].sort((x, y) => new Date(x.starts_at).getTime() - new Date(y.starts_at).getTime());
+            setSessions(rows => [...rows, ...ordered].sort((x, y) => new Date(x.starts_at).getTime() - new Date(y.starts_at).getTime()));
+            setSession(ordered[0] ?? null); setDayFilter(''); setSection('overview'); setError('');
+            setNotice(`${ordered.length} session${ordered.length === 1 ? '' : 's'} scheduled. Open check-in when each start time arrives.`);
+          }}/>}
           <div className="date-bar" role="group" aria-label="Find sessions by date">
             <button type="button" className="secondary" aria-label="Previous day" disabled={saving !== null} onClick={() => changeDay(shiftDay(dayFilter || today, -1))}>‹</button>
             <input type="date" aria-label="Session date" value={dayFilter} onChange={e => changeDay(e.target.value)}/>
